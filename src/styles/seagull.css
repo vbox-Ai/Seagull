@@ -495,3 +495,131 @@
 .sg-log-line.info .sg-log-mark {
   color: var(--ds-text-faint);
 }
+
+/* ---------- Skills 管理：自定义技能导入 / 删除 / 批量 ---------- */
+
+.btn-danger {
+  background: color-mix(in oklab, var(--ds-error, #d64545) 18%, transparent);
+  color: var(--ds-error, #d64545);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ds-error, #d64545) 28%, transparent);
+  opacity: 1;
+}
+
+.btn-xs {
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.skill-custom-badge {
+  margin-left: 8px;
+}
+
+.skill-feedback {
+  margin: 2px 0 4px;
+  border: 1px solid var(--ds-border-subtle);
+  border-left: 3px solid var(--ds-border-default);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-hover);
+  padding: 8px 12px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-relaxed);
+  word-break: break-all;
+}
+.skill-feedback.ok {
+  border-left-color: var(--ds-success);
+  background: color-mix(in oklab, var(--ds-success) 8%, transparent);
+}
+.skill-feedback.err {
+  border-left-color: var(--ds-error, #d64545);
+  background: color-mix(in oklab, var(--ds-error, #d64545) 8%, transparent);
+}
+.skill-feedback.info {
+  border-left-color: var(--ds-accent);
+}
+
+.skill-batch {
+  margin-bottom: 14px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-hover);
+  padding: 12px;
+}
+
+.skill-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.skill-batch-label {
+  min-width: 40px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.skill-chip {
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-primary);
+  padding: 4px 12px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+.skill-chip:hover {
+  background: var(--ds-tile-hover);
+}
+.skill-chip.on {
+  border-color: var(--ds-accent);
+  background: color-mix(in oklab, var(--ds-accent) 14%, transparent);
+  color: var(--ds-accent);
+}
+
+.skill-batch-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.skill-batch-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-primary);
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+.skill-batch-row.ok {
+  border-left: 3px solid var(--ds-success);
+}
+.skill-batch-row.err {
+  border-left: 3px solid var(--ds-error, #d64545);
+}
+.skill-batch-target {
+  flex: 0 0 auto;
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+.skill-batch-state {
+  color: var(--ds-text-secondary);
+  word-break: break-all;
+}
+
+.skill-confirm-copy {
+  margin: 10px 0 4px;
+  color: var(--ds-text-secondary);
+  line-height: var(--leading-prose);
+}

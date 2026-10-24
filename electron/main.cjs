@@ -451,6 +451,11 @@ function skillsDir() {
   return path.join(codexHome(),"skills");
 }
 
+/** 用户自定义技能源目录（决策点1）：~/.seagull/custom-skills/，作为跨平台同步的唯一真源。 */
+function customSkillsDir() {
+  return path.join(homeDir(), ".seagull", "custom-skills");
+}
+
 function configToml() {
   return path.join(codexHome(),"config.toml");
 }
@@ -521,13 +526,153 @@ function listSkills() {
     } catch {
       /* ignore */
     }
-    return { name, desc, enabled: !disabled.has(name) };
+    return { name, desc, enabled: !disabled.has(name), custom: fs.existsSync(path.join(customSkillsDir(), name)) };
   });
 }
 
+// ---------- 自定义技能（Skills 管理页导入 / 删除） ----------
+
+/** 技能名白名单校验：只允许单层目录名，杜绝 ../ 越权删除或写盘。 */
+function sanitizeSkillName(name) {
+  if (typeof name !== "string") return "";
+  const n = name.replace(/[\\/:*?"<>|]/g, "").trim();
+  if (!n || n === "." || n === "..") return "";
+  return n;
+}
+
+/** 递归拷贝技能目录（技能含 SKILL.md + 引用文件，不能只拷一个文件）。 */
+function copyDirRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name);
+    const d = path.join(dest, e.name);
+    if (e.isDirectory()) copyDirRecursive(s, d);
+    else if (e.isFile()) fs.copyFileSync(s, d);
+  }
+}
+
+/** 找一个不冲突的技能名：name、name-2、name-3……（Codex 目录与自定义源目录都不撞）。 */
+function uniqueSkillName(name) {
+  const codex = skillsDir();
+  const custom = customSkillsDir();
+  const conflict = (n) =>
+    fs.existsSync(path.join(codex, n)) || fs.existsSync(path.join(custom, n));
+  if (!conflict(name)) return name;
+  let i = 2;
+  while (conflict(`${name}-${i}`)) i += 1;
+  return `${name}-${i}`;
+}
+
+/** 递归收集目录树下所有「直接含 SKILL.md」的技能目录（zip 解包常有外层包裹目录）。 */
+function collectSkillDirs(root, out = []) {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  if (fs.existsSync(path.join(root, "SKILL.md"))) {
+    out.push(root);
+    return out;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) collectSkillDirs(path.join(root, e.name), out);
+  }
+  return out;
+}
+
+/**
+   把单个技能目录导入：
+   * 校验必须有 SKILL.md
+   * 双写：Codex 目标 `~/.codex/skills/<name>` + 自定义源 `~/.seagull/custom-skills/<name>`
+   * 重名时：不带 resolve 返回 conflict 让调用方弹窗；resolve="rename" 自动改名后导入
+*/
+function importSkillDir(srcDir, resolve) {
+  const rawName = path.basename(srcDir);
+  const name = sanitizeSkillName(rawName);
+  if (!name) return { ok: false, error: `非法技能名：${rawName}` };
+  if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) {
+    return { ok: false, error: `不是有效技能（缺 SKILL.md）：${rawName}` };
+  }
+  const conflict = fs.existsSync(path.join(skillsDir(), name));
+  if (conflict && resolve === "rename") {
+    const final = uniqueSkillName(name);
+    copyDirRecursive(srcDir, path.join(skillsDir(), final));
+    copyDirRecursive(srcDir, path.join(customSkillsDir(), final));
+    return { ok: true, name: final, renamed: true };
+  }
+  if (conflict) {
+    return { ok: false, conflict: true, name, suggested: uniqueSkillName(name) };
+  }
+  copyDirRecursive(srcDir, path.join(skillsDir(), name));
+  copyDirRecursive(srcDir, path.join(customSkillsDir(), name));
+  return { ok: true, name };
+}
+
+/** 删除一个自定义技能：Codex 目录 + 自定义源目录 + config.toml 禁用块一并清。 */
+function deleteCustomSkill(name) {
+  const n = sanitizeSkillName(name);
+  if (!n) return { ok: false, error: "非法技能名" };
+  // 只允许删除自定义技能：随包分发的技能库不在自定义源目录里，误删会破坏注入结果。
+  if (!fs.existsSync(path.join(customSkillsDir(), n))) {
+    return { ok: false, error: "只能删除自定义技能（随包技能请用「禁用」）" };
+  }
+  let removed = false;
+  for (const d of [path.join(skillsDir(), n), path.join(customSkillsDir(), n)]) {
+    try {
+      if (fs.existsSync(d)) {
+        fs.rmSync(d, { recursive: true, force: true });
+        removed = true;
+      }
+    } catch (e) {
+      return { ok: false, error: "删除失败：" + String(e.message) };
+    }
+  }
+  // 同步清理 config.toml 里该技能的 [[skills.config]] 禁用块
+  const disabled = readDisabledSkills();
+  if (disabled.has(n)) {
+    disabled.delete(n);
+    writeDisabledSkills([...disabled]);
+  }
+  return { ok: removed };
+}
+
+/** 从一批技能源目录依次导入，重名时弹窗「改名 / 取消」。 */
+async function importSkillSources(sources) {
+  const imported = [];
+  const skipped = [];
+  const errors = [];
+  for (const src of sources) {
+    let r = importSkillDir(src, null);
+    if (r.conflict) {
+      const box = await dialog.showMessageBox(win, {
+        type: "question",
+        title: "技能重名",
+        message: `技能「${r.name}」已存在`,
+        detail: `点「改名」自动改名并注入（建议名：${r.suggested}），点「取消」跳过这个技能。`,
+        buttons: ["改名", "取消"],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (box.response === 0) {
+        r = importSkillDir(src, "rename");
+        if (r.ok) imported.push(r.name);
+        else errors.push(r.error || r.name);
+      } else {
+        skipped.push(r.name);
+      }
+    } else if (r.ok) {
+      imported.push(r.name);
+    } else {
+      errors.push(r.error || r.name);
+    }
+  }
+  return { ok: imported.length > 0, imported, skipped, errors };
+}
+
 /** 三层技能库总览：seep-kit 引擎技能 + REA 工作流技能 + 注入技能库。 */
-function skillLayers() {
-  const seep = [];
+function skillLayers() {  const seep = [];
   const seepRoot = p(SEEP_SKILLS);
   try {
     const top = fs.readdirSync(seepRoot, { withFileTypes: true }).filter((d) => d.isDirectory());
@@ -1028,6 +1173,65 @@ function fetchRemoteConfig(url) {
 
 // ---------- IPC ----------
 
+// ---------- 单平台操作（单点 IPC 与批量 IPC 共用） ----------
+
+async function doInstall(targetId) {
+  const installed = installedSnapshot().installed;
+  if (!SCRIPTS[targetId]) {
+    return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed };
+  }
+  const prompt = memoryPrompt();
+  if (!prompt) {
+    const dir = p(MEMORY_DIR);
+    const text = `记忆文件为空：请先把提示词粘进 ${dir} 下的 .md 文件，再点安装。`;
+    send("tool:status", { label: "记忆文件为空", state: "idle" });
+    send("tool:log", { label: "安装中止", text: text + "\n" });
+    return { ok: false, code: -1, timedOut: false, out: text, error: text, installed };
+  }
+  const res = await runPowerShell(installArgs(targetId, prompt.path), `安装 ${targetId}`, INSTALL_TIMEOUT);
+  if (res.ok) {
+    const st = loadState();
+    st.installed[targetId] = prompt.name;
+    saveState({ installed: st.installed });
+    setInstalledMeta(targetId, prompt.name);
+    appendHistory({ action: "install", target: targetId, prompt: prompt.name, ok: true });
+  } else {
+    appendHistory({ action: "install", target: targetId, prompt: prompt.name, ok: false, detail: res.error || res.out || "" });
+  }
+  return { ...res, installed: installedSnapshot().installed };
+}
+
+async function doUninstall(targetId) {
+  if (!SCRIPTS[targetId]) {
+    return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed: installedSnapshot().installed };
+  }
+  const res = await runPowerShell(uninstallArgs(targetId), `卸载 ${targetId}`, UNINSTALL_TIMEOUT);
+  if (res.ok) {
+    const st = loadState();
+    delete st.installed[targetId];
+    saveState({ installed: st.installed });
+    setInstalledMeta(targetId, null);
+  }
+  // 兜底清扫：不依赖卸载脚本结果，无条件清提示词残留（见原 handler 注释）
+  const sweep = await runPowerShell(clearPromptsArgs(targetId), `清理 ${targetId} 提示词残留`, UNINSTALL_TIMEOUT);
+  res.out = (res.out || "") + "\n" + (sweep.out || "");
+  if (!sweep.ok) {
+    res.ok = false;
+    res.error = sweep.error || "提示词残留清理失败";
+  }
+  appendHistory({ action: "uninstall", target: targetId, prompt: "", ok: res.ok, detail: res.error || "" });
+  return { ...res, installed: installedSnapshot().installed };
+}
+
+async function doRestore(targetId) {
+  if (!SCRIPTS[targetId]) {
+    return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed: installedSnapshot().installed };
+  }
+  const res = await runPowerShell(restoreMemoryArgs(targetId), `装回 ${targetId} 原始记忆`, UNINSTALL_TIMEOUT);
+  appendHistory({ action: "restore", target: targetId, prompt: "", ok: res.ok, detail: res.error || "" });
+  return { ...res, installed: installedSnapshot().installed };
+}
+
 function registerIpc() {
   ipcMain.handle("tool:state", () => ({
     installed: installedSnapshot().installed,
@@ -1119,31 +1323,7 @@ function registerIpc() {
      安装：把 memory/ 里用户填的提示词注入目标，并同步随包的 Seep 工作台技能库。
      记忆为空时直接失败 —— 宁可报错，也不要把空内容写进用户的 AGENTS.md / 记忆档案。
   */
-  ipcMain.handle("tool:install", async (_e, targetId) => {
-    const installed = installedSnapshot().installed;
-    if (!SCRIPTS[targetId]) {
-      return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed };
-    }
-    const prompt = memoryPrompt();
-    if (!prompt) {
-      const dir = p(MEMORY_DIR);
-      const text = `记忆文件为空：请先把提示词粘进 ${dir} 下的 .md 文件，再点安装。`;
-      send("tool:status", { label: "记忆文件为空", state: "idle" });
-      send("tool:log", { label: "安装中止", text: text + "\n" });
-      return { ok: false, code: -1, timedOut: false, out: text, error: text, installed };
-    }
-    const res = await runPowerShell(installArgs(targetId, prompt.path), `安装 ${targetId}`, INSTALL_TIMEOUT);
-    if (res.ok) {
-      const st = loadState();
-      st.installed[targetId] = prompt.name;
-      saveState({ installed: st.installed });
-      setInstalledMeta(targetId, prompt.name);
-      appendHistory({ action: "install", target: targetId, prompt: prompt.name, ok: true });
-    } else {
-      appendHistory({ action: "install", target: targetId, prompt: prompt.name, ok: false, detail: res.error || res.out || "" });
-    }
-    return { ...res, installed: installedSnapshot().installed };
-  });
+  ipcMain.handle("tool:install", (_e, targetId) => doInstall(targetId));
 
   ipcMain.handle("seep:state", () => seepState());
 
@@ -1177,66 +1357,14 @@ function registerIpc() {
   });
 
 
-  ipcMain.handle("tool:uninstall", async (_e, targetId) => {
-    const res = await runPowerShell(uninstallArgs(targetId), `卸载 ${targetId}`, UNINSTALL_TIMEOUT);
-    if (res.ok) {
-      const st = loadState();
-      delete st.installed[targetId];
-      saveState({ installed: st.installed });
-      setInstalledMeta(targetId, null);
-    }
-
-    // 兜底清扫：**不依赖 install*.ps1 的卸载结果**，无条件执行。
-    //
-    // install*.ps1 的卸载靠 <Home>\managed-prompts\install-state.json 记录该删哪些提示词。
-    // state 一旦不在了（被清理工具删过、用户手工删过、上次卸载删掉了），提示词就留在盘上
-    // 没人管 —— 实测本机 5 个提示词 + 几个 .mdc 就是这么残留的。
-    //
-    // 而且卸载脚本自己也可能失败（文件被占用、权限不足、脚本报错）。早期写法把这一步
-    // 放在 `if (res.ok)` 里面，于是「卸载脚本失败 ⇒ 兜底也不跑 ⇒ 提示词原样留着」——
-    // 偏偏那正是最需要兜底的时候。「点卸载 = 提示词清干净」是硬要求，所以移到这里。
-    //
-    // 这一步按注入点和副产物直接扫，只清提示词，用户的 AGENTS.md / CLAUDE.md /
-    // config.toml / 自己的备份一律不动（详见脚本头部注释）。
-    const sweep = await runPowerShell(
-      clearPromptsArgs(targetId),
-      `清理 ${targetId} 提示词残留`,
-      UNINSTALL_TIMEOUT,
-    );
-    res.out = (res.out || "") + "\n" + (sweep.out || "");
-    if (!sweep.ok) {
-      res.ok = false;
-      res.error = sweep.error || "提示词残留清理失败";
-    }
-    appendHistory({ action: "uninstall", target: targetId, prompt: "", ok: res.ok, detail: res.error || "" });
-    return { ...res, installed: installedSnapshot().installed };
-  });
+  ipcMain.handle("tool:uninstall", (_e, targetId) => doUninstall(targetId));
 
   // 装回原始记忆：把该目标的注入内容还原成原版，技能库保留。
   //
   // 这里**不跑** clearPromptsArgs 兜底清扫 —— 那个脚本连技能树一起清（它的职责是卸载后的
   // 零残留），跟「只想换回原版」正好相反。注入内容本身也不需要它兜底：本 handler 与卸载
   // 走同一段还原逻辑，各注入点（AGENTS.md / CLAUDE.md / config.toml / 记忆档案）都在里面处理掉了。
-  ipcMain.handle("tool:restoreMemory", async (_e, targetId) => {
-    if (!SCRIPTS[targetId]) {
-      return {
-        ok: false,
-        code: -1,
-        timedOut: false,
-        out: `未知的破甲目标：${targetId}`,
-        installed: installedSnapshot().installed,
-      };
-    }
-    const res = await runPowerShell(
-      restoreMemoryArgs(targetId),
-      `装回 ${targetId} 原始记忆`,
-      UNINSTALL_TIMEOUT,
-    );
-    appendHistory({ action: "restore", target: targetId, prompt: "", ok: res.ok, detail: res.error || "" });
-    // 不动 installed 记录：技能库还在，工具仍处于已安装状态 ——
-    // 想彻底回到安装前用「卸载」，这个按钮只负责把记忆换回来。
-    return { ...res, installed: installedSnapshot().installed };
-  });
+  ipcMain.handle("tool:restoreMemory", (_e, targetId) => doRestore(targetId));
 
   ipcMain.handle("tool:restartCodex", async () => {
     const cmd =
@@ -1287,6 +1415,72 @@ function registerIpc() {
   ipcMain.handle("tool:skills:list", () => listSkills());
   ipcMain.handle("tool:skills:layers", () => skillLayers());
   ipcMain.handle("tool:skills:save", (_e, disabled) => writeDisabledSkills(disabled || []));
+
+  /** 导入自定义技能：payload.kind = "zip" | "dir"（默认 zip）。 */
+  ipcMain.handle("tool:skills:import", async (_e, payload) => {
+    const kind = payload && payload.kind === "dir" ? "dir" : "zip";
+    if (kind === "zip") {
+      const r = await dialog.showOpenDialog(win, {
+        title: "导入技能（选择 .zip 技能包）",
+        filters: [{ name: "技能包 zip", extensions: ["zip"] }],
+        properties: ["openFile", "multiSelections"],
+      });
+      if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消" };
+      const sources = [];
+      const tmpDirs = [];
+      for (const z of r.filePaths) {
+        const tmp = await extractZipToTemp(z);
+        tmpDirs.push(tmp);
+        for (const d of collectSkillDirs(tmp)) sources.push(d);
+      }
+      const result = await importSkillSources(sources);
+      for (const t of tmpDirs) {
+        try { fs.rmSync(t, { recursive: true, force: true }); } catch { /* 临时目录留着无妨 */ }
+      }
+      if (sources.length === 0) return { ok: false, error: "压缩包里没有含 SKILL.md 的技能目录" };
+      return result;
+    }
+    const r = await dialog.showOpenDialog(win, {
+      title: "导入技能（选择含 SKILL.md 的技能文件夹）",
+      properties: ["openDirectory", "multiSelections"],
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消" };
+    const sources = [];
+    for (const d of r.filePaths) {
+      if (fs.existsSync(path.join(d, "SKILL.md"))) sources.push(d);
+      else for (const s of collectSkillDirs(d)) sources.push(s);
+    }
+    if (sources.length === 0) return { ok: false, error: "所选文件夹里没有含 SKILL.md 的技能目录" };
+    return importSkillSources(sources);
+  });
+
+  /** 删除自定义技能（目录 + 自定义源 + config.toml 禁用块）。 */
+  ipcMain.handle("tool:skills:delete", (_e, name) => deleteCustomSkill(name));
+
+  /** 批量操作：按平台逐个执行注入 / 卸载 / 还原，独立报结果。 */
+  ipcMain.handle("tool:batch:run", async (_e, payload) => {
+    const action = payload && payload.action;
+    const targets = Array.isArray(payload && payload.targets)
+      ? payload.targets.filter((t) => SCRIPTS[t])
+      : [];
+    if (!["install", "uninstall", "restore"].includes(action)) {
+      return { ok: false, error: "未知批量操作", results: [] };
+    }
+    if (targets.length === 0) return { ok: false, error: "未选择平台", results: [] };
+    const results = [];
+    for (let i = 0; i < targets.length; i += 1) {
+      const id = targets[i];
+      send("tool:status", { label: `批量${action === "install" ? "注入" : action === "uninstall" ? "卸载" : "还原"}（${i + 1}/${targets.length}）${id}`, state: "running" });
+      let r;
+      if (action === "install") r = await doInstall(id);
+      else if (action === "uninstall") r = await doUninstall(id);
+      else r = await doRestore(id);
+      results.push({ target: id, ok: r.ok, code: r.code, error: r.error || undefined });
+    }
+    const okCount = results.filter((x) => x.ok).length;
+    send("tool:status", { label: `批量${action === "install" ? "注入" : action === "uninstall" ? "卸载" : "还原"}完成（成功 ${okCount}/${results.length}）`, state: "idle" });
+    return { ok: okCount > 0, okCount, total: results.length, results };
+  });
 
   ipcMain.handle("tool:openQQ", async (_e, url) => {
     if (typeof url !== "string" || !/^https?:\/\//.test(url)) {

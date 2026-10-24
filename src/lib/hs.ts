@@ -14,7 +14,7 @@ export type InstallResult = {
 /** 重启 Codex：out 是 PowerShell 的原样输出，失败时 error 里带可读原因。 */
 export type RestartResult = { ok: boolean; code?: number; out?: string; error?: string };
 
-export type Skill = { name: string; desc: string; enabled: boolean };
+export type Skill = { name: string; desc: string; enabled: boolean; custom: boolean };
 
 /** 三层技能库：seep-kit 引擎技能 + REA 工作流技能（注入技能库走 listSkills）。 */
 export type SkillLayers = { seep: string[]; rea: string[] };
@@ -76,6 +76,26 @@ export type PromptImportResult = {
   error?: string;
 };
 
+// ---- 自定义技能（Skills 管理页导入 / 删除） ----
+export type SkillImportResult = {
+  ok: boolean;
+  imported?: string[];
+  skipped?: string[];
+  errors?: string[];
+  error?: string;
+};
+export type SkillDeleteResult = { ok: boolean; error?: string };
+
+// ---- 批量操作（注入 / 卸载 / 还原多平台） ----
+export type BatchTargetResult = { target: string; ok: boolean; code?: number; error?: string };
+export type BatchResult = {
+  ok: boolean;
+  okCount?: number;
+  total?: number;
+  results: BatchTargetResult[];
+  error?: string;
+};
+
 // ---- 功能6：远程配置 ----
 export type RemoteResult = { ok: boolean; data?: unknown; error?: string };
 
@@ -113,6 +133,9 @@ export type HsApi = {
   listSkills(): Promise<Skill[]>;
   skillLayers(): Promise<SkillLayers>;
   saveSkills(disabled: string[]): Promise<{ ok: boolean; error?: string }>;
+  skillsImport(kind: "zip" | "dir"): Promise<SkillImportResult>;
+  skillsDelete(name: string): Promise<SkillDeleteResult>;
+  batchRun(payload: { action: "install" | "uninstall" | "restore"; targets: string[] }): Promise<BatchResult>;
   openQQ(url: string): Promise<{ ok: boolean }>;
   quit(): Promise<{ ok: boolean }>;
   win(action: "minimize" | "maximize" | "close"): Promise<{ ok: boolean }>;
