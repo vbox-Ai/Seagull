@@ -2,6 +2,7 @@
 node_modules/
 dist/
 release/
+release2/
 .electron-builder.*.json
 *.blockmap
 
