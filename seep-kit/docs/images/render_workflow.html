@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    overflow: hidden;
+    background: #070b12;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: #e2e8f0;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .window {
+    width: 1140px;
+    background: #0c1220;
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 100px rgba(56, 189, 248, 0.08);
+    overflow: hidden;
+  }
+  .titlebar {
+    background: #101728;
+    padding: 13px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .dots {
+    display: flex;
+    gap: 8px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .dot-red { background: #ff5f56; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green { background: #27c93f; }
+  .title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .title-accent {
+    color: #38bdf8;
+  }
+  .header-badge {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: #4ade80;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    letter-spacing: 0.5px;
+  }
+  .content {
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  
+  /* User Row */
+  .msg-row {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .avatar-user {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  }
+  .avatar-ai {
+    background: linear-gradient(135deg, #06b6d4, #0284c7);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.35);
+  }
+  
+  .user-bubble {
+    background: #141d33;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 12px;
+    padding: 12px 18px;
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .lab-badge {
+    background: #059669;
+    color: #ecfdf5;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+  }
+  .user-text {
+    color: #f1f5f9;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13.5px;
+  }
+  .user-cmd {
+    color: #38bdf8;
+    font-weight: 700;
+  }
+  
+  /* AI Bubble */
+  .ai-bubble {
+    background: #0f1626;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 20px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+  .ai-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .badge-purple {
+    background: rgba(168, 85, 247, 0.15);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    color: #c084fc;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .badge-orange {
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+    color: #fb923c;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .badge-cyan {
+    background: rgba(6, 182, 212, 0.15);
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    color: #38bdf8;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .ai-header-text {
+    color: #94a3b8;
+    font-size: 13px;
+  }
+  
+  /* Step Boxes */
+  .step-box {
+    background: #141c2e;
+    border-left: 3px solid #38bdf8;
+    border-radius: 0 8px 8px 0;
+    padding: 11px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .step-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #38bdf8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-desc {
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.5;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  
+  /* Code Block */
+  .code-block {
+    background: #080d18;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: "JetBrains Mono", Consolas, "Fira Code", monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #e2e8f0;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 4px 0 0 0;
+  }
+  .kwd { color: #f43f5e; font-weight: 600; }
+  .fn { color: #38bdf8; }
+  .str { color: #34d399; }
+  .num { color: #fbbf24; }
+  .cmt { color: #64748b; font-style: italic; }
+  
+  /* Check List */
+  .checklist {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 16px;
+    margin-top: 3px;
+  }
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: #cbd5e1;
+  }
+  .check-icon {
+    color: #22c55e;
+    font-weight: bold;
+  }
+  
+  /* Footer Deliverable */
+  .deliverable-box {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(59, 130, 246, 0.06));
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .deliverable-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #38bdf8;
+    flex-grow: 1;
+  }
+  .metrics-row {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .metric-chip {
+    background: #0a101d;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .metric-val {
+    color: #4ade80;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <!-- Titlebar -->
+  <div class="titlebar">
+    <div class="dots">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <div class="title">
+      <span>Claude Code · DeepSeek Harness · Pi Agent · OpenCode</span>
+      <span style="color:#64748b;">—</span>
+      <span class="title-accent">Autonomous Reversing & CWE-602 Audit Workflow</span>
+    </div>
+    <div class="header-badge">
+      <span>●</span>
+      <span>G-AUTH VERIFIED</span>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <!-- User Input -->
+    <div class="msg-row">
+      <div class="avatar avatar-user">U</div>
+      <div class="user-bubble">
+        <span class="lab-badge">LAB MODE</span>
+        <span class="user-text"><span class="user-cmd">lab:</span> 分析目标样本 Sample_Auth.exe，走查离线特权验证逻辑 (CWE-602)，生成动态 Hook 与微创热补丁验证代码</span>
+      </div>
+    </div>
+
+    <!-- AI Response -->
+    <div class="msg-row">
+      <div class="avatar avatar-ai">AI</div>
+      <div class="ai-bubble">
+        <!-- AI Tag Header -->
+        <div class="ai-header">
+          <span class="badge-purple">ORCHESTRATOR: SOFTSEEP</span>
+          <span class="badge-orange">CWE-602 旁路走查</span>
+          <span class="badge-cyan">23 NATIVE MCP TOOLS</span>
+          <span class="ai-header-text">已捕获目标。已执行双级自动判型与全自动白盒审计链路：</span>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="step-box">
+          <div class="step-title">
+            <span>[1/4] 资产画像与指纹扫描 (seep_auto_triage)</span>
+          </div>
+          <div class="step-desc">
+            格式: <span class="mono" style="color:#38bdf8;">PE32+ (x86_64)</span> · 节区熵: <span class="mono" style="color:#fbbf24;">6.12 (无壳 / 编译器特征清晰)</span> · 关键导入表: <span class="mono">advapi32.dll, kernel32.dll</span><br>
+            范式归类: <span style="color:#e2e8f0; font-weight:600;">Windows 客户端一型范式 (Monolithic Offline PE / 标量分支判定)</span>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-box">
+          <div class="step-title">
+            <span>[2/4] 控制流降噪反编译 (seep_r2_decompile, output_mode='fold')</span>
+          </div>
+          <div class="step-desc">
+            已智能折叠 78% 纯数据指令，锁定决策节点 (节省 62% Context Token)：
+          </div>
+          <pre class="code-block"><code><span class="cmt">// RVA: 0x140001020 — 客户端本地许可有效性判定函数</span>
+<span class="kwd">int</span> <span class="fn">sym.check_vip_status</span>(<span class="kwd">void</span>) {
+    <span class="cmt">// 读取本地注册表试用期与激活标记</span>
+    <span class="kwd">if</span> (<span class="fn">RegQueryValueExW</span>(hKey, <span class="str">L"Licensed"</span>, NULL, NULL, lpData, &amp;cbData) == ERROR_SUCCESS) {
+        <span class="kwd">return</span> <span class="num">1</span>; <span class="cmt">// 关键决策分支: 离线直接放行受限功能 (CWE-602 脆弱点)</span>
+    }
+    <span class="kwd">return</span> <span class="num">0</span>; <span class="cmt">// 试用期过期 / 未激活状态</span>
+}</code></pre>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-box">
+          <div class="step-title">
+            <span>[3/4] 战术智库先导检索 (seep_kb_search, Zero-Waste Recon)</span>
+          </div>
+          <div class="step-desc">
+            命中战术笔记 <span class="mono" style="color:#38bdf8;">#042 (单进程离线标量覆写)</span> 与工业范式库 <span class="mono" style="color:#c084fc;">项目A / 项目B</span>；<br>
+            确立 Authenticode 签名保全方案：采用 <span class="mono" style="color:#34d399;">version.dll</span> 动态库搜索顺序劫持，保持宿主数字签名 100% 完整。
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="step-box">
+          <div class="step-title">
+            <span>[4/4] 动态插桩与断网实锤验证</span>
+          </div>
+          <div class="checklist">
+            <div class="check-item">
+              <span class="check-icon">[√]</span>
+              <span>目标 RVA: <span class="mono" style="color:#38bdf8;">0x140001020 (sym.check_vip_status)</span></span>
+            </div>
+            <div class="check-item">
+              <span class="check-icon">[√]</span>
+              <span>补丁指令: <span class="mono" style="color:#fbbf24;">mov eax, 1; ret (Hex: B8 01 00 00 00 C3)</span></span>
+            </div>
+            <div class="check-item">
+              <span class="check-icon">[√]</span>
+              <span>签名保全: 采用 version.dll 搜索顺序劫持，原 EXE 签名 100% 完好</span>
+            </div>
+            <div class="check-item">
+              <span class="check-icon">[√]</span>
+              <span>断网铁证: 飞行模式脱机验证通过，确认本地决策缺陷 (CWE-602)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deliverable & Metrics -->
+        <div class="deliverable-box">
+          <div class="deliverable-left">
+            <span>🎉</span>
+            <span>验证完成！已在 task_sandbox/Sample_Auth/ 输出完整代理 DLL 源码与咨询级安全评估报告。</span>
+          </div>
+          <div class="metrics-row">
+            <div class="metric-chip">
+              <span>⚡ 自动化耗时:</span>
+              <span class="metric-val">8m 42s</span>
+            </div>
+            <div class="metric-chip">
+              <span>💾 Token 节省:</span>
+              <span class="metric-val">62%</span>
+            </div>
+            <div class="metric-chip">
+              <span>🛡️ 签名完整度:</span>
+              <span class="metric-val">100%</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

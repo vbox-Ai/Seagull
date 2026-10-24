@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    overflow: hidden;
+    background: #060910;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
+    color: #e2e8f0;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .window {
+    width: 1140px;
+    background: #0b101d;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 14px;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.85), 0 0 90px rgba(56, 189, 248, 0.08);
+    overflow: hidden;
+  }
+  .titlebar {
+    background: #0f1628;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .dots { display: flex; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-red { background: #ff5f56; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green { background: #27c93f; }
+  .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+  }
+  .title-accent { color: #38bdf8; }
+  .badge-ready {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    color: #4ade80;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  
+  .terminal {
+    padding: 16px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  
+  .banner-box {
+    border-top: 1px dashed rgba(56, 189, 248, 0.4);
+    border-bottom: 1px dashed rgba(56, 189, 248, 0.4);
+    padding: 6px 0;
+    text-align: center;
+  }
+  .banner-title {
+    color: #38bdf8;
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+  }
+  .env-info {
+    color: #94a3b8;
+    font-size: 11px;
+    line-height: 1.5;
+    margin-top: 3px;
+  }
+  .env-highlight { color: #f1f5f9; font-weight: 600; }
+  
+  /* Grid Layout for 9 Categories */
+  .grid-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+  }
+  
+  .section-card {
+    background: #0f1526;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .sec-header {
+    font-size: 12px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sec-tag {
+    font-size: 10px;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  
+  .item-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+  .pass-tag {
+    color: #22c55e;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .optn-tag {
+    color: #fbbf24;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .item-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  /* Footer Summary */
+  .summary-card {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(16, 185, 129, 0.08));
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .summary-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 8px;
+  }
+  .summary-badge-group {
+    display: flex;
+    gap: 12px;
+  }
+  .sum-chip {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sum-pass {
+    background: rgba(34, 197, 94, 0.2);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+  }
+  .sum-optn {
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    color: #fbbf24;
+  }
+  
+  .conclusion-text {
+    font-size: 13px;
+    color: #f1f5f9;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ready-status {
+    color: #4ade80;
+    font-weight: 800;
+  }
+  .tip-text {
+    font-size: 11.5px;
+    color: #94a3b8;
+  }
+  .tip-cmd {
+    color: #38bdf8;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="window">
+  <!-- Titlebar -->
+  <div class="titlebar">
+    <div class="dots">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <div class="title">
+      <span>PowerShell / Windows Terminal</span>
+      <span style="color:#64748b;">—</span>
+      <span class="title-accent">Seep Reverse Lab Health Verifier (check.bat / check.ps1)</span>
+    </div>
+    <div class="badge-ready">
+      <span>●</span>
+      <span>51/51 PASSED</span>
+    </div>
+  </div>
+
+  <!-- Terminal Content -->
+  <div class="terminal">
+    <!-- Banner -->
+    <div class="banner-box">
+      <div class="banner-title">Seep Reverse Lab — 工作台部署完备性校验与健康体检 (Verifier)</div>
+      <div class="env-info">
+        工作台物理根目录: <span class="env-highlight">C:\Workspace\Seep</span> &nbsp;|&nbsp; 
+        操作系统环境: <span class="env-highlight">Windows 11 / Linux x64 / macOS (Multi-Platform)</span> &nbsp;|&nbsp; 
+        校对基准: <span class="env-highlight">MANUAL/DEPLOYMENT-CHECKLIST.md</span>
+      </div>
+    </div>
+
+    <!-- 9 Categories in 2 Columns -->
+    <div class="grid-container">
+      
+      <!-- Col 1 -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <!-- [1/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[1/9] 📁 核心架构与工程目录树</span>
+            <span class="sec-tag">10 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">工作台主目录完整 (Tool/)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">技能包目录完整 (Tool/skill/)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">MCP服务引擎目录 (Tool/mcp/)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">系统提示词层 (Tool/prompts/)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">十四大脱敏案例工程 (Tool/cases/ 项目A ~ 项目N)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">上游开源验证集 (Tool/upstream/ 3大开源项目镜像)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">MCP专用运行时强约定 (Tool/mcp/Tool/)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">版本标识与变更日志 (VERSION + CHANGELOG.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">已有用户一键更新脚本 (update.ps1 + update.sh)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">一键卸载脚本 (uninstall.ps1 + uninstall.sh)</span></div>
+        </div>
+
+        <!-- [2/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[2/9] 📚 攻防实战知识库与战术模板 (KB)</span>
+            <span class="sec-tag">2 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">战术实战笔记 (289篇完整检索库)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">内置 MCP 源码组件 (ReverseLab / Ghidra / JSHook)</span></div>
+        </div>
+
+        <!-- [3/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[3/9] 🧠 智能体指令系统与拦截扩展</span>
+            <span class="sec-tag">5 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Pi Agent 系统指令 (SYSTEM.md 已就绪且去个人化)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">通用跨 Agent 规范 (AGENTS.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Claude Code 项目级规范 (CLAUDE.md 在项目根)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">DeepSeek Harness 配置文件 (DSH-PROFILE.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">底层安全放行与 Lab 状态机扩展 (.ts)</span></div>
+        </div>
+
+        <!-- [4/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[4/9] 🛠️ 逆向工程专业技能库 (Skills - 9大组件)</span>
+            <span class="sec-tag">7 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">核心总控调度器 (softseep 包含 8 大专题库)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">移动端逆向全链路 (apkseep 包含 45 规范与 56 脚本)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">IDA Pro 自动化联动 (ida-reverse)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">通用许可/卡密校验突破规范 (license-bypass)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">独立战术安全技能包 (safe-skills 5组)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">技能 SKILL.md 无 UTF-8 BOM（杜绝 Agent 静默跳过）</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">本地技能无缝同步 (~/.pi/agent/skills/softseep)</span></div>
+        </div>
+
+      </div>
+
+      <!-- Col 2 -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <!-- [5/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[5/9] 🔌 MCP 服务引擎与内置工具箱</span>
+            <span class="sec-tag">7 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">核心服务端脚本 (seep_mcp_server.py 语法自洽 / 23工具)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Jadx 反编译引擎 (jadx-1.5.6 完整就绪)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Radare2 二进制全套工具 (r2 / rabin2 / radiff2 / rasm2)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Apktool 资源拆解重构环境 (apktool.jar + bat)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Frida / LSPosed 动态插桩模板库 (hook-mcp)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Web/JS 逆向调试引擎已就绪 (js-reverse-mcp)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Playwright 浏览器自动化已就绪 (playwright-mcp)</span></div>
+        </div>
+
+        <!-- [6/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[6/9] ⚙️ 外部运行时与商业授权协同</span>
+            <span class="sec-tag">4 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Python 解释器 (3.11+ 且可执行)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Python mcp 协议库环境支持 (mcp>=1.20,<1.29)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">IDA Pro 商业反编译器协同 (未装时 Radare2 自动降级)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">Claude Code / OpenCode 项目级 MCP 注册 (.mcp.json)</span></div>
+        </div>
+
+        <!-- [7/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[7/9] 📚 MANUAL/ 战术手册完备性校验</span>
+            <span class="sec-tag">9 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">环境预要求指南 (PREREQUISITES.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">IDA Pro 商业软件接入指南 (IDA-PRO.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">反调试绕过战术手册 (ANTI-DEBUG.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">通用脱壳前置分析 SOP (UNPACKING.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">PoC 闭环自动化验证 SOP (POC-VALIDATION.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">全景部署与多 Agent 集成指南 (DEPLOYMENT.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">官方部署资产核验基准清单 (DEPLOYMENT-CHECKLIST.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">跨平台运行与战术等价指南 (CROSS-PLATFORM.md)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">合规转译中继与防拒体系 (COMPLIANCE-RELAY.md)</span></div>
+        </div>
+
+        <!-- [8/9] + [9/9] -->
+        <div class="section-card">
+          <div class="sec-header">
+            <span>[8/9] 🌐 合规中继与 [9/9] 🔒 脱敏走查</span>
+            <span class="sec-tag">8 项通过</span>
+          </div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">中继主程序 (relay.py 纯标准库 / 3大协议支持)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">上下文守卫白名单与敏感词映射同步</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">中继单元测试套件 (tests/test_relay.py 84/84 PASS)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">个人隐私零残留 (已跟踪文件全深度扫描无泄露)</span></div>
+          <div class="item-row"><span class="pass-tag">[√ PASS]</span><span class="item-text">含本机路径的生成物未被 git 追踪</span></div>
+          <div class="item-row"><span class="optn-tag">[! OPTN]</span><span class="item-text">目标产品名残留统计 (功能性标识符合法保留)</span></div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Summary Box -->
+    <div class="summary-card">
+      <div class="summary-top">
+        <div class="summary-badge-group">
+          <div class="sum-chip sum-pass">
+            <span>[体检报告] 核心检查通过: 51 项</span>
+          </div>
+          <div class="sum-chip sum-optn">
+            <span>[*] 可选/建议关注项: 1 项 (功能性标识符)</span>
+          </div>
+        </div>
+        <div style="font-size:11.5px; color:#64748b;">
+          基准核验清单: 100% 对齐
+        </div>
+      </div>
+      <div class="conclusion-text">
+        <span>🎉 结论:</span>
+        <span class="ready-status">工作台处于 [READY / 完备就绪] 状态！核心资产全部对齐。</span>
+      </div>
+      <div class="tip-text">
+        您可以直接在 Agent (Pi / Claude / DSH / Codex) 中发送: <span class="tip-cmd">lab：</span> 开启测试！
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
