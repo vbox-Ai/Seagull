@@ -1,0 +1,131 @@
+{
+  "name": "seagull-v8",
+  "version": "4.5.0",
+  "private": true,
+  "description": "海鸥V8·破甲版 · 桌面版",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "electron .",
+    "build": "vite build",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "start": "npm run build && electron .",
+    "dist": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.45.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  },
+  "build": {
+    "appId": "com.seagull.v8",
+    "productName": "海鸥V8·破甲版",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json",
+      "variant.json"
+    ],
+    "extraResources": [
+      {
+        "from": "install.ps1",
+        "to": "install.ps1"
+      },
+      {
+        "from": "scripts/clear-injected-prompts.ps1",
+        "to": "scripts/clear-injected-prompts.ps1"
+      },
+      {
+        "from": "install-zcode.ps1",
+        "to": "install-zcode.ps1"
+      },
+      {
+        "from": "install-claude.ps1",
+        "to": "install-claude.ps1"
+      },
+      {
+        "from": "install-cursor.ps1",
+        "to": "install-cursor.ps1"
+      },
+      {
+        "from": "install-workbuddy.ps1",
+        "to": "install-workbuddy.ps1"
+      },
+      {
+        "from": "install-doubao.ps1",
+        "to": "install-doubao.ps1"
+      },
+      {
+        "from": "install-dsh.ps1",
+        "to": "install-dsh.ps1"
+      },
+      {
+        "from": "install-opencode.ps1",
+        "to": "install-opencode.ps1"
+      },
+      {
+        "from": "seep-kit",
+        "to": "seep-kit",
+        "filter": [
+          "**/*",
+          "!opencode.jsonc",
+          "!setup/cordis.generated.yml",
+          "!Tool/mcp/Tool/safe/playwright-mcp/tests/testserver/*.pem"
+        ]
+      },
+      {
+        "from": "memory",
+        "to": "memory"
+      },
+      {
+        "from": "build/icon-256.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "海鸥V8·破甲版-免安装版-${version}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "海鸥V8·破甲版-安装版-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "海鸥V8·破甲版",
+      "uninstallDisplayName": "海鸥V8·破甲版",
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh"
+    }
+  }
+}

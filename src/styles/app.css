@@ -1,0 +1,231 @@
+/*
+  本文件只补 PI-Desktop 设置页导航栏没有的两块：顶部品牌行、底部个人中心入口。
+  其余一切（导航项、分组标签、内容列、分组卡片、行、按钮、徽标）都用
+  settings.css / ui-kit.css 里的原生类名，颜色全部走 tokens.css 的令牌。
+*/
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 10px 10px;
+}
+
+.app-brand-mark {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-2xs);
+  object-fit: cover;
+}
+
+.app-brand-copy {
+  min-width: 0;
+}
+
+.app-brand-name {
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-brand-meta {
+  margin-top: 1px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.app-nav-foot {
+  flex: 0 0 auto;
+  padding: 8px 10px 12px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.app-row-button {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+/* 可点击的行必须有悬停与按下反馈：settings.css 的 .settings-row 没有 hover 态 */
+.app-row-button:hover {
+  background: var(--ds-tile-hover);
+}
+
+.app-row-button:active {
+  background: var(--ds-tile-deep);
+}
+
+.app-row-button:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ds-accent) 32%, transparent);
+  outline: none;
+}
+
+.app-row-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.app-row-selected {
+  background: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+}
+
+.app-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.app-pre {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  color: var(--ds-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.app-prose {
+  color: var(--ds-text-secondary);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ---------- 通知 ---------- */
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  display: flex;
+  max-width: 420px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-elevated-opaque);
+  box-shadow: var(--ds-shadow-dialog);
+  padding: 10px 14px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-relaxed);
+  cursor: pointer;
+}
+
+/* ---------- 免责声明正文（用 ui-kit 的 .dialog 外壳） ---------- */
+
+.consent-body {
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 12px 0 4px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-prose);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ---------- 原生标题栏下的留白修正 ----------
+   PI-Desktop 的这两处顶部内边距是给 macOS 红绿灯和自绘标题栏留的，
+   换成系统原生标题栏后不需要。 */
+.settings-nav-top {
+  padding: 10px 12px 6px;
+}
+
+.settings-content {
+  padding: 18px 48px 56px 40px;
+}
+
+/* 放在分组标题下方时，动作行往下留白而不是往上 */
+.app-inline-actions-top {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+/* ---------- 侧栏底部固定 ----------
+   PI-Desktop 的 .settings-nav 自身没有 display:flex（它的设置页导航里
+   也没有底部区块），所以 .settings-nav-scroll 的 flex:1 不生效，我加的
+   个人中心会停在半空。这里补成 flex 列，把它压到底部。 */
+.settings-shell-full .settings-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+/* QQ 群一行：群号在左，加入按钮在右，整行可点 */
+.app-qq-control {
+  gap: 10px;
+}
+
+.app-link {
+  color: var(--ds-accent);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--ds-accent) 35%, transparent);
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+/* 悬停整行时把链接的下划线压实，强化「这里可以点」 */
+.settings-row:hover .app-link,
+.app-row-button:hover .app-link {
+  text-decoration-color: var(--ds-accent);
+}
+
+/* 全局提示条：顶部居中 + 成功绿底 / 失败红底，比右下角小条更醒目 */
+.toast.toast-success-solid,
+.toast.toast-error-solid {
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: 12px;
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 40px));
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  animation: toast-drop-in var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+/* 成功：鲜艳青绿（比主题的深绿亮一档，顶部小胶囊更醒目） */
+.toast.toast-success-solid {
+  background: #2fd07f;
+}
+
+.toast.toast-error-solid {
+  background: #ff5f5a;
+}
+
+@keyframes toast-drop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

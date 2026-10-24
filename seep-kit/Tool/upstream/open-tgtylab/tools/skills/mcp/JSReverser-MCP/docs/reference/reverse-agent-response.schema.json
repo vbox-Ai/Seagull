@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsreverser-mcp.local/docs/reference/reverse-agent-response.schema.json",
+  "title": "JSReverser MCP Reverse Agent Response",
+  "description": "Machine-readable draft schema for agent-facing reverse workflow responses such as manage_reverse_task, orchestrate_reverse_task, and get_rebuild_health_report.",
+  "type": "object",
+  "x-schemaVersion": "1.0",
+  "$defs": {
+    "toolClass": {
+      "type": "string",
+      "enum": ["task", "orchestration", "rebuild", "analysis"]
+    },
+    "routeHint": {
+      "type": "string",
+      "enum": [
+        "stay_on_task_flow",
+        "switch_to_orchestration",
+        "switch_to_rebuild",
+        "switch_to_analysis"
+      ]
+    },
+    "paramsObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "invoke": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/paramsObject"
+        }
+      },
+      "required": ["tool"],
+      "additionalProperties": false
+    },
+    "invokeHint": {
+      "type": "object",
+      "properties": {
+        "requiredParams": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "optionalParams": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "example": {
+          "$ref": "#/$defs/paramsObject"
+        }
+      },
+      "required": ["requiredParams"],
+      "additionalProperties": false
+    },
+    "routeGuard": {
+      "type": "object",
+      "properties": {
+        "preferredToolClass": {
+          "$ref": "#/$defs/toolClass"
+        },
+        "routeHint": {
+          "$ref": "#/$defs/routeHint"
+        },
+        "avoidTools": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "continuation": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/paramsObject"
+        },
+        "invoke": {
+          "$ref": "#/$defs/invoke"
+        },
+        "invokeHint": {
+          "$ref": "#/$defs/invokeHint"
+        },
+        "toolClass": {
+          "$ref": "#/$defs/toolClass"
+        },
+        "routeHint": {
+          "$ref": "#/$defs/routeHint"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "resumeCommand": {
+          "type": "string"
+        },
+        "actionKey": {
+          "type": "string"
+        }
+      },
+      "required": ["ready", "reason"],
+      "additionalProperties": false
+    },
+    "fallbackPlanStep": {
+      "type": "object",
+      "properties": {
+        "tool": {"type": "string"},
+        "params": {
+          "$ref": "#/$defs/paramsObject"
+        }
+      },
+      "required": ["tool"],
+      "additionalProperties": false
+    },
+    "fallbackPlan": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "recommendedStrategy": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fallbackPlanStep"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "responseSummary": {
+      "type": "string"
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "partial", "blocked"]
+    },
+    "shouldResume": {
+      "type": "boolean"
+    },
+    "shouldSwitchStrategy": {
+      "type": "boolean"
+    },
+    "nextBestTool": {
+      "type": "string"
+    },
+    "nextBestParams": {
+      "$ref": "#/$defs/paramsObject"
+    },
+    "errorCode": {
+      "type": "string"
+    },
+    "errorType": {
+      "type": "string"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "blockedBy": {
+      "type": "string"
+    },
+    "detailLevel": {
+      "type": "string",
+      "enum": ["minimal", "standard"]
+    },
+    "routeGuard": {
+      "$ref": "#/$defs/routeGuard"
+    },
+    "continuation": {
+      "$ref": "#/$defs/continuation"
+    },
+    "fallbackPlan": {
+      "$ref": "#/$defs/fallbackPlan"
+    }
+  },
+  "required": ["schemaVersion", "continuation", "detailLevel", "outcome"],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "schemaVersion": "1.0",
+      "responseSummary": "已生成任务 task-demo-001 的 compact orchestration plan。",
+      "outcome": "success",
+      "shouldResume": false,
+      "shouldSwitchStrategy": false,
+      "detailLevel": "minimal",
+      "routeGuard": {
+        "preferredToolClass": "rebuild",
+        "routeHint": "switch_to_rebuild",
+        "avoidTools": ["search_websocket_messages"]
+      },
+      "continuation": {
+        "ready": true,
+        "reason": "已生成 task-demo-001 的下一步编排建议。",
+        "tool": "export_rebuild_bundle",
+        "params": {
+          "taskId": "task-demo-001"
+        },
+        "invoke": {
+          "tool": "export_rebuild_bundle",
+          "params": {
+            "taskId": "task-demo-001"
+          }
+        },
+        "invokeHint": {
+          "requiredParams": ["taskId"],
+          "example": {
+            "taskId": "task-demo-001"
+          }
+        },
+        "toolClass": "rebuild",
+        "routeHint": "switch_to_rebuild",
+        "strategy": "rebuild-first"
+      }
+    },
+    {
+      "schemaVersion": "1.0",
+      "responseSummary": "已生成任务 task-demo-001 的下一步恢复建议。",
+      "outcome": "partial",
+      "shouldResume": true,
+      "shouldSwitchStrategy": true,
+      "errorCode": "env_error",
+      "errorType": "env_error",
+      "retryable": true,
+      "blockedBy": "environment",
+      "detailLevel": "standard",
+      "continuation": {
+        "ready": true,
+        "reason": "已识别 task-demo-001 的补环境缺口，可直接转到 diff_env_requirements。",
+        "tool": "diff_env_requirements",
+        "invoke": {
+          "tool": "diff_env_requirements",
+          "params": {
+            "runtimeError": "window is not defined",
+            "observedCapabilities": ["window", "document"]
+          }
+        },
+        "invokeHint": {
+          "requiredParams": ["runtimeError", "observedCapabilities"],
+          "example": {
+            "runtimeError": "window is not defined",
+            "observedCapabilities": ["window", "document"]
+          }
+        },
+        "toolClass": "rebuild",
+        "routeHint": "switch_to_rebuild",
+        "strategy": "env-fix"
+      },
+      "fallbackPlan": {
+        "recommendedStrategy": "env-fix",
+        "steps": [
+          {
+            "tool": "diff_env_requirements",
+            "params": {
+              "runtimeError": "window is not defined",
+              "observedCapabilities": ["window", "document"]
+            }
+          },
+          {
+            "tool": "manage_reverse_task",
+            "params": {
+              "action": "summarize",
+              "taskId": "task-demo-001"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "1.0",
+      "responseSummary": "已返回任务 task-demo-001 的摘要。",
+      "outcome": "blocked",
+      "shouldResume": false,
+      "shouldSwitchStrategy": false,
+      "errorCode": "task_blocked",
+      "errorType": "task_blocked",
+      "retryable": false,
+      "blockedBy": "task_state",
+      "detailLevel": "standard",
+      "continuation": {
+        "ready": false,
+        "reason": "任务当前处于 blocked 状态，需先解除阻塞。"
+      }
+    }
+  ]
+}

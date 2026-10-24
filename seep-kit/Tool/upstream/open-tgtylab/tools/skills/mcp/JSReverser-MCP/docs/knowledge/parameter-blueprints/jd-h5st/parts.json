@@ -1,0 +1,85 @@
+{
+  "parameter": "h5st",
+  "parts": [
+    {
+      "index": 1,
+      "name": "timestamp",
+      "role": "time",
+      "source": "runtime",
+      "how_to_get": "从请求发送前的时间值或摘要输入中确认，优先对齐页面侧时间精度。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 2,
+      "name": "request_scope",
+      "role": "request-context",
+      "source": "request",
+      "how_to_get": "从目标请求的 URL、query、header、body 边界中抽出参与签名的请求上下文。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 3,
+      "name": "body_digest",
+      "role": "digest",
+      "source": "body",
+      "how_to_get": "通过 hook 摘要前文本和摘要输出确认，不要只看最终 h5st 字符串。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 4,
+      "name": "ua_related_env",
+      "role": "env",
+      "source": "header",
+      "how_to_get": "交叉记录 UA、sec-ch-ua、navigator 相关读取点，确认是否参与签名。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 5,
+      "name": "cookie_or_storage_seed",
+      "role": "env-seed",
+      "source": "cookie",
+      "how_to_get": "从页面已确认的 cookie/storage 读取点回收，不允许脑补敏感值。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 6,
+      "name": "constant_or_version_marker",
+      "role": "constant",
+      "source": "bundle",
+      "how_to_get": "从命中的脚本常量表、版本标记或固定前缀中确认。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 7,
+      "name": "ordering_signature_segment",
+      "role": "ordering",
+      "source": "request",
+      "how_to_get": "通过摘要前拼接文本与字段顺序确认该段是否依赖排序逻辑。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 8,
+      "name": "crypto_output_segment",
+      "role": "crypto-output",
+      "source": "bundle",
+      "how_to_get": "通过 hook 摘要/加密函数的输出确定，不要跳过中间层直接猜最终串。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 9,
+      "name": "encoding_variant_segment",
+      "role": "encoding",
+      "source": "bundle",
+      "how_to_get": "观察最终输出前是否有二次编码、字符集变换或 remap。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 10,
+      "name": "final_join_segment",
+      "role": "join",
+      "source": "bundle",
+      "how_to_get": "确认最终拼接顺序、分隔符和格式化规则，再定义本地输出契约。",
+      "confidence": "confirmed"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsreverser-mcp.local/docs/reference/manage-response.schema.json",
+  "title": "JSReverser MCP manage_reverse_task Response",
+  "description": "Draft schema for agent-facing manage_reverse_task responses.",
+  "x-schemaVersion": "1.0",
+  "allOf": [
+    {
+      "$ref": "./reverse-agent-response.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "outputMode": {
+          "type": "string",
+          "enum": ["compact", "verbose"]
+        }
+      },
+      "examples": [
+        {
+          "schemaVersion": "1.0",
+          "responseSummary": "已返回任务 task-demo-001 的快照。",
+          "diagnostics": {
+            "responseStatus": "ok",
+            "action": "get",
+            "outputMode": "compact",
+            "taskId": "task-demo-001"
+          },
+          "outcome": "partial",
+          "shouldResume": false,
+          "shouldSwitchStrategy": false,
+          "detailLevel": "minimal",
+          "continuation": {
+            "ready": true,
+            "reason": "已返回任务 task-demo-001 的上下文快照。",
+            "tool": "manage_reverse_task",
+            "params": {
+              "action": "progress",
+              "taskId": "task-demo-001"
+            },
+            "invoke": {
+              "tool": "manage_reverse_task",
+              "params": {
+                "action": "progress",
+                "taskId": "task-demo-001"
+              }
+            },
+            "invokeHint": {
+              "requiredParams": ["action", "taskId"],
+              "example": {
+                "action": "progress",
+                "taskId": "task-demo-001"
+              }
+            },
+            "toolClass": "task",
+            "routeHint": "stay_on_task_flow",
+            "strategy": "observe-first"
+          },
+          "action": "get",
+          "outputMode": "compact",
+          "taskId": "task-demo-001"
+        },
+        {
+          "schemaVersion": "1.0",
+          "responseSummary": "已返回任务 task-demo-001 的摘要。",
+          "outcome": "blocked",
+          "shouldResume": false,
+          "shouldSwitchStrategy": false,
+          "errorCode": "task_blocked",
+          "errorType": "task_blocked",
+          "retryable": false,
+          "blockedBy": "task_state",
+          "detailLevel": "standard",
+          "continuation": {
+            "ready": false,
+            "reason": "任务当前处于 blocked 状态，需先解除阻塞。"
+          },
+          "taskId": "task-demo-001",
+          "status": "blocked"
+        }
+      ]
+    }
+  ]
+}

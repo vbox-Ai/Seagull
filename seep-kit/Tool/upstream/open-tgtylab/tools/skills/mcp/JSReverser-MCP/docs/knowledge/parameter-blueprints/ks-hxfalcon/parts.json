@@ -1,0 +1,53 @@
+{
+  "parameter": "__NS_hxfalcon",
+  "parts": [
+    {
+      "index": 1,
+      "name": "weak_check_payload",
+      "role": "weak-sample",
+      "source": "request",
+      "how_to_get": "先固定 weak-check 请求样本，作为早期路径对照。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 2,
+      "name": "strict_check_payload",
+      "role": "strict-sample",
+      "source": "request",
+      "how_to_get": "固定 strict-check 请求样本，并以其为主验收。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 3,
+      "name": "vm_bridge_segment",
+      "role": "vm-bridge",
+      "source": "bundle",
+      "how_to_get": "通过 initiator 链和 `$encode` / `Ee.call(...)` 相关调用点确认。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 4,
+      "name": "cat_version_segment",
+      "role": "version-toggle",
+      "source": "bundle",
+      "how_to_get": "记录 cat-version 读取点以及它对 payload / route 分支的影响。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 5,
+      "name": "callback_or_async_segment",
+      "role": "async-bridge",
+      "source": "bundle",
+      "how_to_get": "确认 VM bridge 是同步返回还是 callback / async 回填。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 6,
+      "name": "final_sign_write_segment",
+      "role": "sign-write",
+      "source": "request",
+      "how_to_get": "记录 sign 最终写回请求的时机和位置，并对比 weak/strict 差异。",
+      "confidence": "confirmed"
+    }
+  ]
+}

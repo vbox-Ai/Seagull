@@ -1,0 +1,180 @@
+/**
+ * @license
+ * Copyright 2026 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+import assert from 'node:assert';
+import {describe, it, beforeEach} from 'node:test';
+
+import {DetailedDataManager} from '../../../src/utils/detailedDataManager.js';
+
+interface ResettableDetailedDataManager {
+  instance?: unknown;
+}
+
+interface SmartHandledResult {
+  detailId: string;
+  summary: {
+    type: string;
+    preview: string;
+  };
+  expiresAt: number;
+}
+
+interface FullDetailedDataManager {
+  store(data: unknown, ttlMs?: number): string;
+  retrieve(detailId: string, path?: string): unknown;
+  retrievePage(
+    detailId: string,
+    options: {path?: string; cursor?: number; limit?: number},
+  ): {items: unknown[]; nextCursor?: number; total: number};
+  getStats(): {
+    cacheSize: number;
+    totalSizeKB: string;
+    avgAccessCount: string;
+    autoExtendEnabled: boolean;
+  };
+  getDetailedStats(): Array<{detailId: string; remainingSeconds: number}>;
+  clear(): void;
+}
+
+describe('DetailedDataManager', () => {
+  beforeEach(() => {
+    (DetailedDataManager as unknown as ResettableDetailedDataManager).instance =
+      undefined;
+  });
+
+  it('returns original data for small payload in smartHandle', () => {
+    const manager = DetailedDataManager.getInstance();
+    const data = {small: true};
+    const result = manager.smartHandle(data, 1024);
+    assert.deepStrictEqual(result, data);
+  });
+
+  it('returns summary response for large payload in smartHandle', () => {
+    const manager = DetailedDataManager.getInstance();
+    const data = {text: 'x'.repeat(3000), fn: () => 'ok'};
+    const result = manager.smartHandle(data, 10) as SmartHandledResult;
+
+    assert.ok(result.detailId.startsWith('detail_'));
+    assert.strictEqual(result.summary.type, 'object');
+    assert.ok(result.summary.preview.length > 0);
+    assert.ok(typeof result.expiresAt === 'number');
+  });
+
+  it('stores and retrieves full data and path values', () => {
+    const manager = DetailedDataManager.getInstance();
+    const data = {a: {b: 42}};
+    const id = manager.store(data);
+
+    assert.deepStrictEqual(manager.retrieve(id), data);
+    assert.strictEqual(manager.retrieve(id, 'a.b'), 42);
+  });
+
+  it('throws for missing, expired, and invalid path retrieval', async () => {
+    const manager = DetailedDataManager.getInstance();
+
+    assert.throws(() => manager.retrieve('missing-id'), /not found or expired/);
+
+    const expiredId = manager.store({x: 1}, 1);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.throws(() => manager.retrieve(expiredId), /expired/);
+
+    const id = manager.store({a: null});
+    assert.throws(() => manager.retrieve(id, 'a.b.c'), /Path not found/);
+  });
+
+  it('auto-extends expiring entries on access and supports manual extend', () => {
+    const manager = DetailedDataManager.getInstance();
+    const id = manager.store({x: 1}, 10);
+    const statsBefore = manager.getDetailedStats().find(x => x.detailId === id);
+    assert.ok(statsBefore);
+
+    manager.retrieve(id);
+    const statsAfterAccess = manager
+      .getDetailedStats()
+      .find(x => x.detailId === id);
+    assert.ok(statsAfterAccess);
+    assert.ok(
+      statsAfterAccess!.remainingSeconds >= statsBefore!.remainingSeconds,
+    );
+
+    manager.extend(id, 1000);
+    const statsAfterExtend = manager
+      .getDetailedStats()
+      .find(x => x.detailId === id);
+    assert.ok(statsAfterExtend);
+    assert.ok(
+      statsAfterExtend!.remainingSeconds >= statsAfterAccess!.remainingSeconds,
+    );
+  });
+
+  it('evicts least recently used entry when cache is full', () => {
+    const manager =
+      DetailedDataManager.getInstance() as unknown as FullDetailedDataManager;
+    const ids: string[] = [];
+
+    for (let i = 0; i < 100; i++) {
+      ids.push(manager.store({i}));
+    }
+
+    manager.retrieve(ids[99]);
+    manager.store({extra: true});
+
+    assert.strictEqual(manager.getStats().cacheSize, 100);
+    assert.throws(() => manager.retrieve(ids[0]), /not found or expired/);
+    assert.deepStrictEqual(manager.retrieve(ids[99]), {i: 99});
+  });
+
+  it('provides stats and clear functionality', () => {
+    const manager = DetailedDataManager.getInstance();
+    const id = manager.store({foo: 'bar'});
+    manager.retrieve(id);
+
+    const stats = manager.getStats();
+    assert.ok(stats.cacheSize >= 1);
+    assert.ok(Number(stats.totalSizeKB) >= 0);
+    assert.ok(Number(stats.avgAccessCount) >= 0);
+    assert.strictEqual(stats.autoExtendEnabled, true);
+
+    const details = manager.getDetailedStats();
+    assert.ok(details.length >= 1);
+    assert.ok(details[0].detailId.startsWith('detail_'));
+
+    manager.clear();
+    assert.strictEqual(manager.getStats().cacheSize, 0);
+  });
+
+  it('returns paged slices for large arrays and object entries', () => {
+    const manager =
+      DetailedDataManager.getInstance() as unknown as FullDetailedDataManager;
+    const id = manager.store({
+      rows: ['a', 'b', 'c'],
+      lookup: {one: 1, two: 2},
+    });
+
+    const firstPage = manager.retrievePage(id, {
+      path: 'rows',
+      limit: 2,
+    });
+    assert.deepStrictEqual(firstPage, {
+      items: ['a', 'b'],
+      nextCursor: 2,
+      total: 3,
+    });
+
+    const secondPage = manager.retrievePage(id, {
+      path: 'rows',
+      cursor: firstPage.nextCursor,
+      limit: 2,
+    });
+    assert.deepStrictEqual(secondPage, {
+      items: ['c'],
+      total: 3,
+    });
+
+    const objectPage = manager.retrievePage(id, {path: 'lookup', limit: 1});
+    assert.deepStrictEqual(objectPage.items, [['one', 1]]);
+    assert.strictEqual(objectPage.nextCursor, 1);
+  });
+});

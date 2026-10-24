@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-tgtylab.local/schemas/workflow-event-v1.schema.json",
+  "title": "OpenTgtyLab Workflow Event v1",
+  "type": "object",
+  "required": [
+    "event_id",
+    "schema_version",
+    "workflow_id",
+    "type",
+    "timestamp",
+    "actor",
+    "payload",
+    "revision",
+    "previous_event_hash",
+    "event_hash"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous_event_hash": {
+      "type": "string"
+    },
+    "event_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

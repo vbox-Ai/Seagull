@@ -1,0 +1,3 @@
+{"ts":"<ISO8601>","stage":"observe","kind":"summary","note":"<目标请求与 initiator 已确认>"}
+{"ts":"<ISO8601>","stage":"capture","kind":"hook-hit","source":"<hook id or function name>","input":{"summary":"<input summary>"},"output":{"summary":"<output summary>"},"note":"<命中了哪条链路>"}
+{"ts":"<ISO8601>","stage":"patch","kind":"env-gap","gap":"<missing api or first divergence>","note":"<当前补哪个最小因果单元>"}

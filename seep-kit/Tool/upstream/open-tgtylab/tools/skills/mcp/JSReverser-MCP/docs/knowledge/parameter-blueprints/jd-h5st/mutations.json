@@ -1,0 +1,62 @@
+{
+  "parameter": "h5st",
+  "mutations": [
+    {
+      "id": "field-ordering-normalization",
+      "applies_to_part": 7,
+      "kind": "ordering-variant",
+      "base_algorithm": "field-join",
+      "mutation_summary": "签名前的字段组合通常不是简单对象原顺序，需要以页面侧实际拼接顺序为准。",
+      "logic": [
+        "先确认参与字段集合",
+        "再确认字段顺序和空字段策略",
+        "最后再进入摘要/编码阶段"
+      ],
+      "reproduce_hint": "不要直接用本地对象遍历顺序代替页面拼接顺序。",
+      "upgrade_watch": [
+        "参与字段集合是否变化",
+        "空字段是否被保留",
+        "排序规则是否从字典序切到自定义顺序"
+      ],
+      "confidence": "confirmed"
+    },
+    {
+      "id": "digest-preprocess-variant",
+      "applies_to_part": 3,
+      "kind": "digest-variant",
+      "base_algorithm": "digest",
+      "mutation_summary": "body 或请求上下文在进入摘要前通常会先做自定义 normalize，而不是直接 hash 原始 JSON。",
+      "logic": [
+        "先抓摘要前文本",
+        "确认是否存在 stringify/trim/sort/remap",
+        "再对摘要输出做对比"
+      ],
+      "reproduce_hint": "如果直接对原始 body 做 hash，多半会和页面结果不一致。",
+      "upgrade_watch": [
+        "stringify 策略变化",
+        "字段顺序变化",
+        "摘要前前缀/后缀是否变化"
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "final-encoding-variant",
+      "applies_to_part": 9,
+      "kind": "encoding-variant",
+      "base_algorithm": "string-encoding",
+      "mutation_summary": "最终输出前可能存在二次编码或字符映射，不能默认最终串就是标准摘要输出。",
+      "logic": [
+        "先抓摘要/加密原始输出",
+        "再抓最终 h5st 输出",
+        "比较中间是否多了一层 remap / encode / join"
+      ],
+      "reproduce_hint": "不要把中间摘要结果直接当最终 h5st。",
+      "upgrade_watch": [
+        "字符集变化",
+        "分隔符变化",
+        "是否新增一层 encode/remap"
+      ],
+      "confidence": "inferred"
+    }
+  ]
+}

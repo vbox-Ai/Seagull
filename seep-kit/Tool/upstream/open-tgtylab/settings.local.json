@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "mcp__hunter_tools__*",
+      "mcp__burp__*",
+      "mcp__ghidra__*",
+      "mcp__jsreverser__*",
+      "mcp__jshook__*",
+      "Bash(*)",
+      "Read(/*)",
+      "Edit(/*)",
+      "WebFetch(*)",
+      "Agent(*)",
+      "Skill(*)"
+    ]
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "effortLevel": "xhigh",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "enabledMcpjsonServers": [
+    "hunter_tools",
+    "reverse_lab_tools"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-tool-call.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

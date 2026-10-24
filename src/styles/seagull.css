@@ -1,0 +1,393 @@
+/*
+  海鸥V8·破甲版 专属视觉层
+  叠加在 PI-Desktop 令牌体系之上：海鸥青强调色、首页卡片网格、
+  悬浮胶囊底栏、二级向导。全部使用本文件自己的类名前缀 sg-，
+  避免与既有 settings-* / app-* 冲突。
+*/
+
+/* ---------- 海鸥青强调色 ---------- */
+:root,
+:root[data-theme="dark"] {
+  --sg-accent: #1d9e75;
+  --sg-accent-strong: #0f6e56;
+  --sg-accent-soft: color-mix(in oklab, #1d9e75 16%, transparent);
+  --sg-accent-ink: #ffffff;
+}
+
+:root[data-theme="light"] {
+  --sg-accent: #0f6e56;
+  --sg-accent-strong: #0c5845;
+  --sg-accent-soft: color-mix(in oklab, #0f6e56 10%, transparent);
+  --sg-accent-ink: #ffffff;
+}
+
+/* ---------- 首页 ---------- */
+
+.sg-home {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 28px 96px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.sg-home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sg-home-title {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-tight);
+}
+
+.sg-home-sub {
+  margin: 4px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+}
+
+.sg-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+  padding: 10px 14px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+/* 卡片网格：统一尺寸，3 列自适应 */
+.sg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 860px) {
+  .sg-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sg-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 148px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-elevated-opaque);
+  padding: 16px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.sg-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--sg-accent) 55%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+.sg-card:active {
+  transform: translateY(0);
+}
+
+.sg-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--sg-accent) 45%, transparent);
+}
+
+.sg-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sg-card-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--sg-accent-soft);
+  color: var(--sg-accent);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.sg-card-name {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-tight);
+}
+
+/* 注入状态圆点：已注入=绿实心，未注入=灰 */
+.sg-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-round);
+}
+
+.sg-dot.on {
+  background: var(--ds-success);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-success) 22%, transparent);
+}
+
+.sg-dot.off {
+  background: var(--ds-text-faint);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-text-faint) 18%, transparent);
+}
+
+.sg-card-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.sg-card-status.on {
+  color: var(--sg-accent);
+}
+
+/* 使用教程卡片：海鸥青实心底，白字，尺寸与其他卡一致 */
+.sg-card.tutorial {
+  border: none;
+  background: linear-gradient(135deg, var(--sg-accent) 0%, var(--sg-accent-strong) 100%);
+  color: var(--sg-accent-ink);
+}
+
+.sg-card.tutorial .sg-card-name,
+.sg-card.tutorial .sg-card-status {
+  color: var(--sg-accent-ink);
+}
+
+.sg-card.tutorial .sg-card-status {
+  opacity: 0.92;
+}
+
+/* ---------- 悬浮胶囊底栏 ---------- */
+
+.sg-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 14px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-elevated-opaque);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.sg-dock-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-round);
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    background var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.sg-dock-btn:hover {
+  color: var(--ds-text-primary);
+  background: var(--ds-tile-hover);
+}
+
+.sg-dock-btn.active {
+  color: var(--sg-accent);
+  background: var(--sg-accent-soft);
+}
+
+/* 点击抖动反馈 */
+.sg-dock-btn.jitter {
+  animation: sg-jitter var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+@keyframes sg-jitter {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-2px, 1px);
+  }
+  50% {
+    transform: translate(2px, -1px);
+  }
+  75% {
+    transform: translate(-1px, -1px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* ---------- 二级向导 ---------- */
+
+.sg-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 28px 96px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.sg-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sg-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+
+.sg-step-idx {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-round);
+  background: var(--ds-tile);
+  color: var(--ds-text-secondary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sg-step.active .sg-step-idx {
+  background: var(--sg-accent);
+  color: var(--sg-accent-ink);
+}
+
+.sg-step.done .sg-step-idx {
+  background: var(--ds-success);
+  color: #ffffff;
+}
+
+.sg-step.active {
+  color: var(--ds-text-primary);
+}
+
+.sg-wizard-card {
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--ds-bg-elevated-opaque);
+  padding: 20px;
+}
+
+.sg-wizard-title {
+  margin: 0 0 12px;
+  color: var(--ds-text-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.sg-wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* 引擎选择行 */
+.sg-engine-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+
+.sg-engine-row label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sg-engine-name {
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.sg-engine-desc {
+  margin-top: 2px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+/* 进度条 */
+.sg-progress {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--ds-tile-deep);
+  overflow: hidden;
+}
+
+.sg-progress-bar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--sg-accent);
+  transition: width var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+/* 诊断报告 */
+.sg-report {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-inset);
+  padding: 14px;
+  color: var(--ds-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  user-select: text;
+}

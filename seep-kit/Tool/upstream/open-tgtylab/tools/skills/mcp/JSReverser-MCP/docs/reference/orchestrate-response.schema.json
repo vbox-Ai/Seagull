@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsreverser-mcp.local/docs/reference/orchestrate-response.schema.json",
+  "title": "JSReverser MCP orchestrate_reverse_task Response",
+  "description": "Draft schema for agent-facing orchestrate_reverse_task responses.",
+  "x-schemaVersion": "1.0",
+  "allOf": [
+    {
+      "$ref": "./reverse-agent-response.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "currentStage": {
+          "type": "string"
+        },
+        "orchestration": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "examples": [
+        {
+          "schemaVersion": "1.0",
+          "ok": true,
+          "taskId": "task-demo-001",
+          "currentStage": "Rebuild",
+          "responseSummary": "已生成任务 task-demo-001 的 compact orchestration plan。",
+          "outcome": "success",
+          "shouldResume": false,
+          "shouldSwitchStrategy": false,
+          "detailLevel": "minimal",
+          "routeGuard": {
+            "preferredToolClass": "rebuild",
+            "routeHint": "switch_to_rebuild",
+            "avoidTools": ["search_websocket_messages"]
+          },
+          "continuation": {
+            "ready": true,
+            "reason": "已生成 task-demo-001 的下一步编排建议。",
+            "tool": "export_rebuild_bundle",
+            "params": {
+              "taskId": "task-demo-001"
+            },
+            "invoke": {
+              "tool": "export_rebuild_bundle",
+              "params": {
+                "taskId": "task-demo-001"
+              }
+            },
+            "invokeHint": {
+              "requiredParams": ["taskId"],
+              "example": {
+                "taskId": "task-demo-001"
+              }
+            },
+            "toolClass": "rebuild",
+            "routeHint": "switch_to_rebuild",
+            "strategy": "rebuild-first"
+          }
+        },
+        {
+          "schemaVersion": "1.0",
+          "responseSummary": "已生成任务 task-demo-001 的下一步恢复建议。",
+          "outcome": "partial",
+          "shouldResume": true,
+          "shouldSwitchStrategy": true,
+          "errorCode": "env_error",
+          "errorType": "env_error",
+          "retryable": true,
+          "blockedBy": "environment",
+          "detailLevel": "standard",
+          "continuation": {
+            "ready": true,
+            "reason": "已识别 task-demo-001 的补环境缺口，可直接转到 diff_env_requirements。",
+            "tool": "diff_env_requirements",
+            "invoke": {
+              "tool": "diff_env_requirements",
+              "params": {
+                "runtimeError": "window is not defined",
+                "observedCapabilities": ["window", "document"]
+              }
+            },
+            "invokeHint": {
+              "requiredParams": ["runtimeError", "observedCapabilities"]
+            },
+            "strategy": "env-fix"
+          },
+          "fallbackPlan": {
+            "recommendedStrategy": "env-fix",
+            "steps": [
+              {"tool": "diff_env_requirements"},
+              {"tool": "manage_reverse_task"}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

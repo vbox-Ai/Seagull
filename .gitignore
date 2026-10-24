@@ -1,0 +1,46 @@
+# 依赖与构建产物
+node_modules/
+dist/
+release/
+.electron-builder.*.json
+*.blockmap
+
+# 随包第三方测试夹具（含一把上游公开测试私钥）与部署时生成的配置：
+# 不入库，避免推仓库时被 GitHub secret scanning / push protection 拦下
+seep-kit/Tool/mcp/Tool/safe/playwright-mcp/tests/testserver/*.pem
+seep-kit/opencode.jsonc
+seep-kit/setup/cordis.generated.yml
+
+# 运行时产物
+logs/
+*.log
+install-state.json
+memory.json
+.env
+.env.local
+
+# 旧版 Python 工具遗留
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+build_log*.txt
+dist_nuitka/
+
+# 备份
+*.bak
+*.bak2
+*.spec.bak
+*.spec.orig
+*.db
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

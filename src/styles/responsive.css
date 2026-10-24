@@ -1,0 +1,97 @@
+/*
+  Responsive and reduced-motion tails that must stay last so they override the
+  section rules above.
+*/
+
+@media (max-width: 720px) {
+  .plugins-toolbar-end {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .plugins-search-wrap {
+    flex: 1 1 auto;
+  }
+
+  .plugins-row-controls {
+    align-self: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugins-menu,
+  .plugins-sheet,
+  .plugins-sheet-scrim,
+  .plugins-modal,
+  .plugins-modal-backdrop,
+  .plugins-skeleton-line {
+    animation: none;
+  }
+
+  .plugins-card:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-surface,
+  .settings-shell-full,
+  .jump-latest-btn,
+  .chat-error-notice,
+  .work-panel,
+  .work-panel.is-exiting,
+  .sidebar,
+  .sidebar.is-exiting {
+    /* Near-zero (not none): exit unmount listens for animationend. */
+    animation-duration: 0.01ms !important;
+  }
+
+  /* The top bar's lead-in only exists to track the dock's motion. */
+  .conversation-topbar,
+  .conversation-topbar.ct-collapsed,
+  .conversation-topbar .ct-lead,
+  .conversation-topbar.ct-collapsed .ct-lead {
+    transition-duration: 0.01ms !important;
+  }
+
+  .route-pending-indicator {
+    animation: none;
+    border-color: var(--ds-text-muted);
+  }
+
+  .session-switch-progress > span {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+    transform: none;
+  }
+
+  .composer-placeholder,
+  .composer-mode-chip-face,
+  .composer-mode-chip[data-planning="true"] svg {
+    animation: none;
+  }
+
+  .composer-shell,
+  .composer-shell:focus-within,
+  .btn,
+    .icon-btn,
+    .send-btn,
+    .stop-btn,
+    .title-nav-btn,
+    .nav-item,
+    .copy-btn,
+    .sidebar-toolbar-button,
+  .sidebar-session-group-add,
+  .review-change-card,
+  .review-change-card-header,
+  .review-change-card-caret,
+  .review-change-rollback {
+    transform: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .review-change-card-body {
+    animation: none;
+  }
+}

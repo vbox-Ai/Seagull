@@ -1,0 +1,15 @@
+{
+  "id": "generic-query-token",
+  "title": "Generic Query Token Workflow",
+  "aliases": ["query-token", "query-sign", "token"],
+  "keywords": ["query", "token", "sign", "a_bogus", "_signature"],
+  "category": "query-signature",
+  "status": "stable",
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-31",
+  "summary": "适用于 query 中 token/sign 参数的通用流程，强调参数拼接、发起链路与升级回溯。",
+  "relatedDocs": [
+    "docs/reference/reverse-workflow.md",
+    "docs/reference/reverse-artifacts.md"
+  ]
+}

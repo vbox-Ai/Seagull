@@ -1,0 +1,23 @@
+{
+  "id": "douyin-a-bogus",
+  "title": "Douyin a_bogus Workflow",
+  "aliases": ["a_bogus", "a-bogus", "douyin-a-bogus"],
+  "keywords": [
+    "a_bogus",
+    "a-bogus",
+    "douyin",
+    "resource/list",
+    "msToken",
+    "webid"
+  ],
+  "category": "query-signature",
+  "status": "stable",
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-31",
+  "summary": "面向 a_bogus 的详细流程，覆盖请求确认、initiator 回溯、send-time patch、portable runtime 与纯算法门槛。",
+  "relatedDocs": [
+    "docs/reference/reverse-workflow.md",
+    "docs/reference/pure-extraction.md",
+    "docs/reference/env-patching.md"
+  ]
+}

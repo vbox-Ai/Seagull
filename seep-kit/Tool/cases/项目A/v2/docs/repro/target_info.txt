@@ -1,0 +1,28 @@
+# 目标画像（Target Info）
+
+软件名称        : <项目A> (64-bit)  —— 案例库代号 <项目A>
+精确版本        : 28.40.0100
+编译器/运行时    : twinBASIC 982 (PE32+ x64, VB6 运行时窗口类 ThunderRT6FormDC)
+安装路径        : D:\Data\<项目A>主程序          : <项目A>.exe
+主程序 SHA256   : e2b134e9b7e68886d59f005152ae2f339cdf20159ede00cb37fda0f6fda06ccd
+主程序体积      : 39306808 字节 (37.5 MB)
+数字签名        : 无
+配置文件        : %APPDATA%\<项目A>64\<项目A>.ini  (UTF-16 LE BOM, [Register] 段)
+
+PoC 产物        : dist/version.dll  (DLL 搜索顺序劫持代理)
+PoC SHA256      : cc428f85e55ef12d53302696c6f76d74aa364e0d3214da3a0b36bdb128cb8391
+PoC 体积        : 257024 字节
+PoC 构建        : rustc --edition 2021 --crate-type cdylib -C opt-level=z -C lto=fat -C codegen-units=1 -C strip=symbols -C panic=abort
+
+授权模型关键 RVA (ImageBase 0x140000000)
+  license_type  = 0x22FD724  (int)  注册码前缀分类 xy01..xy05 -> 1..5（★非激活判据）
+  ver_flag      = 0x230170C  (int)  版本覆盖标志
+  授权状态字     = 0x230CDEA  (word) 0xFFFF=试用 / 0x0000=已激活（★真正的激活开关）
+
+补丁点
+  0x670CB1 : F7 D0            -> 31 C0            (not eax -> xor eax,eax)
+  0x670BFF : 66 C7 00 FF FF   -> 66 C7 00 00 00   (前置检查分支不写试用标记)
+  0x670CD5 : 66 C7 00 FF FF   -> 66 C7 00 00 00   (空注册信息分支不写试用标记)
+  0x15E2A47: 44 8B 5C 24 7C   -> E9 40 00 00 00   (关于框许可等级 -> Lifetime License)
+
+生成时间: 2026-09-27 23:24:23

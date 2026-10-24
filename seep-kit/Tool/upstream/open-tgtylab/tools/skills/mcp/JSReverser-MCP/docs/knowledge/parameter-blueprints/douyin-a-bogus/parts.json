@@ -1,0 +1,53 @@
+{
+  "parameter": "a_bogus",
+  "parts": [
+    {
+      "index": 1,
+      "name": "path_query_segment",
+      "role": "request-context",
+      "source": "request",
+      "how_to_get": "从 resource-list 请求的 path + query 原始字符串确认。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 2,
+      "name": "route_query_segment",
+      "role": "request-query",
+      "source": "query",
+      "how_to_get": "记录 route query 字段及其进入 signer 前的顺序和编码方式。",
+      "confidence": "confirmed"
+    },
+    {
+      "index": 3,
+      "name": "msToken_segment",
+      "role": "env-seed",
+      "source": "query",
+      "how_to_get": "从成功请求样本中确认其存在，再追来源分类，不直接复用真实值。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 4,
+      "name": "webid_segment",
+      "role": "env-seed",
+      "source": "query",
+      "how_to_get": "在请求样本和页面依赖读取点中交叉确认。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 5,
+      "name": "security_bundle_output",
+      "role": "crypto-output",
+      "source": "bundle",
+      "how_to_get": "通过 security bundle 内部 helper 输出或 query 写点前中间值确认。",
+      "confidence": "inferred"
+    },
+    {
+      "index": 6,
+      "name": "send_time_patch_segment",
+      "role": "transport-patch",
+      "source": "bundle",
+      "how_to_get": "对比 append/set 后 query 和 send 前 final query，确认是否存在发送前补丁。",
+      "confidence": "confirmed"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+{"ts":"<ISO8601>","stage":"observe","kind":"target-request","request":{"method":"<GET|POST>","url":"<https://target.example/api>","queryKeys":["<k1>","<k2>"]},"note":"<为什么判定它是目标请求>"}
+{"ts":"<ISO8601>","stage":"capture","kind":"response-shape","response":{"status":200,"bodyPreview":"<first 200 chars>"},"note":"<响应特征或验收线索>"}

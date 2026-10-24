@@ -1,0 +1,16 @@
+{
+  "id": "jd-h5st",
+  "title": "JD H5ST Workflow",
+  "aliases": ["h5st", "x-h5st", "jd-h5st"],
+  "keywords": ["h5st", "jd", "x-h5st"],
+  "category": "header-signature",
+  "status": "stable",
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-31",
+  "summary": "面向 h5st 类参数的详细工作流，覆盖请求样本固定、脚本定位、hook 捕获、拼接顺序分析与升级排查。",
+  "relatedDocs": [
+    "docs/reference/reverse-workflow.md",
+    "docs/reference/parameter-methodology-template.md",
+    "docs/reference/env-patching.md"
+  ]
+}

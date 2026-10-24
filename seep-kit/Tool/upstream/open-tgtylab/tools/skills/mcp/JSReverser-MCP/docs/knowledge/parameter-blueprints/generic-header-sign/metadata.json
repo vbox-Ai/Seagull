@@ -1,0 +1,15 @@
+{
+  "id": "generic-header-sign",
+  "title": "Generic Header Signature Workflow",
+  "aliases": ["x-sign", "header-sign", "header-signature", "sign"],
+  "keywords": ["header", "sign", "signature", "x-sign"],
+  "category": "header-signature",
+  "status": "stable",
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-31",
+  "summary": "适用于未知站点的 header 签名类参数排查，强调 request identify、hook capture 和 first divergence。",
+  "relatedDocs": [
+    "docs/reference/reverse-workflow.md",
+    "docs/reference/env-patching.md"
+  ]
+}

@@ -1,0 +1,215 @@
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { GraphStep, LogEntry, DiagnosticItem, SessionItem, Deliverables, HarnessView, HarnessMode } from "../../core";
+import { logger, diagnosticService } from "../../services";
+import { createHarnessEngine } from "../../engine/harnessGraph";
+
+interface HarnessContextType {
+  sessions: SessionItem[];
+  activeSessionId: string;
+  currentSession?: SessionItem;
+  viewMode: HarnessView;
+  steps: GraphStep[];
+  logs: LogEntry[];
+  diagnostics: DiagnosticItem[];
+  selectedStep: GraphStep | null;
+  deliverables: Deliverables | null;
+  isRunning: boolean;
+  isToolMonitorOpen: boolean;
+  executeHarness: (target: string, prompt: string, mode: HarnessMode) => Promise<void>;
+  runDiagnostics: () => Promise<void>;
+  clearLogs: () => void;
+  newSession: () => void;
+  selectSession: (id: string) => void;
+  selectStep: (step: GraphStep | null) => void;
+  setViewMode: (view: HarnessView) => void;
+  setToolMonitorOpen: (open: boolean) => void;
+  dismissLoot: () => void;
+}
+
+const INITIAL_SESSIONS: SessionItem[] = [
+  {
+    id: "sess-1",
+    title: "PE 样本分析与脱壳",
+    target: "samples/challenge_auth.exe",
+    time: "Today",
+    status: "idle",
+  },
+  {
+    id: "sess-2",
+    title: "CTF Web 靶场全自主探测",
+    target: "http://target.ctf.local:8080",
+    time: "Yesterday",
+    status: "completed",
+  },
+  {
+    id: "sess-3",
+    title: "Android Native 校验定位",
+    target: "samples/mobile_banking.apk",
+    time: "Sep 27",
+    status: "completed",
+  },
+];
+
+const HarnessContext = createContext<HarnessContextType | null>(null);
+
+export function HarnessProvider({ children }: { children: ReactNode }) {
+  const [sessions, setSessions] = useState<SessionItem[]>(INITIAL_SESSIONS);
+  const [activeSessionId, setActiveSessionId] = useState("sess-1");
+  const [viewMode, setViewMode] = useState<HarnessView>("canvas");
+  const [steps, setSteps] = useState<GraphStep[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>(diagnosticService.getCached());
+  const [selectedStep, setSelectedStep] = useState<GraphStep | null>(null);
+  const [deliverables, setDeliverables] = useState<Deliverables | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isToolMonitorOpen, setIsToolMonitorOpen] = useState(false);
+
+  useEffect(() => {
+    return logger.subscribe((entry) => {
+      setLogs((prev) => [...prev, entry]);
+    });
+  }, []);
+
+  const currentSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+
+  const handleGraphEvent = useCallback(
+    (event: { type: "NODE_EVENT" | "LOOT_REVEAL"; step?: GraphStep; deliverables?: any }) => {
+      if (event.type === "NODE_EVENT" && event.step) {
+        const step = event.step;
+        setSteps((prev) => {
+          const idx = prev.findIndex((s) => s.id === step.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = step;
+            return next;
+          }
+          return [...prev, step];
+        });
+
+        if (step.status === "running") {
+          logger.tool(step.agentId, `${step.title}: ${step.detail}`, undefined, { kbRef: step.kbRef });
+        } else if (step.status === "done" && step.evidence) {
+          logger.evidence(step.agentId, step.title, step.evidence);
+        }
+      } else if (event.type === "LOOT_REVEAL" && event.deliverables) {
+        setDeliverables(event.deliverables);
+        logger.info("main", "Mission complete. Deliverables card generated.", event.deliverables);
+      }
+    },
+    []
+  );
+
+  const executeHarness = async (target: string, prompt: string, mode: HarnessMode) => {
+    setIsRunning(true);
+    setSteps([]);
+    setSelectedStep(null);
+    setDeliverables(null);
+
+    logger.info("main", `Starting ${mode.toUpperCase()} session on ${target}: ${prompt}`);
+
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, target, title: prompt.slice(0, 16), status: "running" }
+          : s
+      )
+    );
+
+    try {
+      const app = createHarnessEngine(handleGraphEvent);
+      await app.invoke(
+        {
+          target,
+          wish: prompt,
+          board: "",
+          triageInfo: {},
+          steps: [],
+          deliverables: {},
+          isCompleted: false,
+        },
+        {
+          recursionLimit: 50,
+          configurable: { thread_id: `harness-${Date.now()}` },
+        }
+      );
+    } catch (err) {
+      logger.error("main", "Harness execution failed", err);
+      console.error("Harness error:", err);
+    } finally {
+      setIsRunning(false);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeSessionId ? { ...s, status: "completed" } : s))
+      );
+    }
+  };
+
+  const runDiagnostics = async () => {
+    const results = await diagnosticService.runFullDiagnostics(currentSession?.target);
+    setDiagnostics(results);
+  };
+
+  const clearLogs = () => {
+    logger.clear();
+    setLogs([]);
+  };
+
+  const newSession = () => {
+    const newId = `sess-${Date.now()}`;
+    const item: SessionItem = {
+      id: newId,
+      title: "新建逆向会话",
+      target: "samples/target.exe",
+      time: "Just now",
+      status: "idle",
+    };
+    setSessions((prev) => [item, ...prev]);
+    setActiveSessionId(newId);
+    setSteps([]);
+    setSelectedStep(null);
+    setDeliverables(null);
+    setIsRunning(false);
+    logger.info("main", `Created new session ${newId}`);
+  };
+
+  const selectSession = (id: string) => {
+    setActiveSessionId(id);
+    setSteps([]);
+    setSelectedStep(null);
+    setDeliverables(null);
+  };
+
+  return (
+    <HarnessContext.Provider
+      value={{
+        sessions,
+        activeSessionId,
+        currentSession,
+        viewMode,
+        steps,
+        logs,
+        diagnostics,
+        selectedStep,
+        deliverables,
+        isRunning,
+        isToolMonitorOpen,
+        executeHarness,
+        runDiagnostics,
+        clearLogs,
+        newSession,
+        selectSession,
+        selectStep: setSelectedStep,
+        setViewMode,
+        setToolMonitorOpen: setIsToolMonitorOpen,
+        dismissLoot: () => setDeliverables(null),
+      }}
+    >
+      {children}
+    </HarnessContext.Provider>
+  );
+}
+
+export function useHarness() {
+  const ctx = useContext(HarnessContext);
+  if (!ctx) throw new Error("useHarness must be used within HarnessProvider");
+  return ctx;
+}

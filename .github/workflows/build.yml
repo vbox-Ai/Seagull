@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install
+        run: npm ci
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      # 版本号自动递增：只在非「bump」提交上执行，避免 GITHUB_TOKEN 回推触发循环
+      - name: Bump version
+        if: "!contains(github.event.head_commit.message, 'chore: bump version')"
+        run: |
+          git config user.name "seagull-bot"
+          git config user.email "bot@seagull.local"
+          npm version patch --no-git-tag-version
+          node scripts/sync-version.mjs
+          git add package.json package-lock.json variant.json
+          git commit -m "chore: bump version" || echo "no version change"
+          git push origin main
+
+      - name: Build
+        run: |
+          npm run build
+          node scripts/build.mjs free
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seagull-v8
+          path: release/*.zip
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          gh release create "v$V" release/*.zip --title "海鸥V8·破甲版 v$V" || echo "release exists or no GH_TOKEN"

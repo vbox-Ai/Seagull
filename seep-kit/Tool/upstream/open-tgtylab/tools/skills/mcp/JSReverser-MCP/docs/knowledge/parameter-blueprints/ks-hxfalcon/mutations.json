@@ -1,0 +1,43 @@
+{
+  "parameter": "__NS_hxfalcon",
+  "mutations": [
+    {
+      "id": "vm-bridge-callback-variant",
+      "applies_to_part": 5,
+      "kind": "runtime-variant",
+      "base_algorithm": "vm-bridge",
+      "mutation_summary": "VM bridge 可能不是同步返回，而是 callback / async 方式把编码结果回填到请求链路。",
+      "logic": [
+        "先抓 VM bridge 调用参数",
+        "确认返回值是否立即可见",
+        "若不可见，继续抓 callback wiring 或异步回填路径"
+      ],
+      "reproduce_hint": "不要默认 `$encode` 一调用就同步返回结果。",
+      "upgrade_watch": [
+        "callback 参数个数是否变化",
+        "bridge 是否从 sync 切成 async",
+        "结果回填点是否前移或后移"
+      ],
+      "confidence": "confirmed"
+    },
+    {
+      "id": "strict-check-route-variant",
+      "applies_to_part": 2,
+      "kind": "ordering-variant",
+      "base_algorithm": "payload-sign",
+      "mutation_summary": "strict-check 路由可能比 weak-check 多额外字段或不同 payload 形状，不能拿 weak-check 结果直接等价推导。",
+      "logic": [
+        "分别固定 weak-check 与 strict-check 样本",
+        "对比 payload 字段集合",
+        "以 strict-check 为最终验收主线"
+      ],
+      "reproduce_hint": "weak-check 过了不等于 signer 完整正确。",
+      "upgrade_watch": [
+        "strict-check route 是否新增字段",
+        "cat-version 是否只影响 strict-check",
+        "payload 结构是否分支化"
+      ],
+      "confidence": "confirmed"
+    }
+  ]
+}

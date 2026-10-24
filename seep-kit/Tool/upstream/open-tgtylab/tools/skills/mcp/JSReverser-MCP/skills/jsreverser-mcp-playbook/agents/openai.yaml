@@ -1,0 +1,7 @@
+interface:
+  display_name: 'MCP 前端逆向作业规范'
+  short_description: '前端 JS 逆向：task-driven、补环境、插桩、去混淆'
+  default_prompt: '使用 $jsreverser-mcp-playbook 对目标站做签名链路逆向。优先走 task-driven 工作流：新任务用 start_reverse_task；查状态用 manage_reverse_task；自动推进用 orchestrate_reverse_task；一键 pure/port-ready 用 run_reverse_agent；最小交付导出用 export_portable_bundle；只有查看蓝图文档时才用 get_parameter_workflow。'
+
+policy:
+  allow_implicit_invocation: true

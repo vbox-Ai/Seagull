@@ -1,0 +1,15 @@
+[
+  {
+    "action": "navigate",
+    "url": "<https://target.example/page>"
+  },
+  {
+    "action": "click",
+    "selector": "<button or trigger selector>"
+  },
+  {
+    "action": "type",
+    "selector": "<input selector>",
+    "text": "<optional text>"
+  }
+]

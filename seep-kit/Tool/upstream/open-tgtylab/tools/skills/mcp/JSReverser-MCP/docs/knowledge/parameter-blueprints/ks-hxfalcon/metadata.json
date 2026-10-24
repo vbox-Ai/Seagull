@@ -1,0 +1,16 @@
+{
+  "id": "ks-hxfalcon",
+  "title": "Kuaishou __NS_hxfalcon Workflow",
+  "aliases": ["__NS_hxfalcon", "hxfalcon", "ks-hxfalcon", "falcon"],
+  "keywords": ["__NS_hxfalcon", "hxfalcon", "falcon", "$encode", "cat-version"],
+  "category": "risk-parameter",
+  "status": "stable",
+  "version": "1.0.0",
+  "lastUpdated": "2026-03-31",
+  "summary": "面向 falcon 风控参数的详细流程，覆盖 weak/strict 样本、VM bridge、strict-check 验证与纯提取门槛。",
+  "relatedDocs": [
+    "docs/reference/reverse-workflow.md",
+    "docs/reference/pure-extraction.md",
+    "docs/reference/env-patching.md"
+  ]
+}

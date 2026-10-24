@@ -1,0 +1,50 @@
+# Runtime
+*.pyc
+__pycache__/
+.venv/
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+*.bak
+*.log
+
+# Credentials (safety net)
+.env
+.env.*
+credentials*
+*.key
+*.pem
+*.p12
+secrets*
+
+# CTF work artifacts (not for distribution)
+exports/
+cases/
+notes/
+reports/
+.agents/
+
+
+# Auto-downloaded tools (too large for git, install_tools.ps1 downloads them)
+tools/common/ghidra_*/
+tools/windows/x64dbg/
+tools/windows/die/
+tools/windows/PE-bear/
+tools/windows/ProcessMonitor/
+tools/windows/Cutter/
+tools/android/jadx/
+tools/android/apktool/
+tools/downloads/

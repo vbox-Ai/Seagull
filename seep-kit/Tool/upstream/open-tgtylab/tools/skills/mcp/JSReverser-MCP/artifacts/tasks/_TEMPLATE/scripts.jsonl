@@ -1,0 +1,2 @@
+{"ts":"<ISO8601>","stage":"observe","scriptId":"<id>","url":"<script_url>","locator":{"type":"initiator|search|find_in_script","query":"<keyword>"},"note":"<为什么它和目标链路相关>"}
+{"ts":"<ISO8601>","stage":"capture","scriptId":"<id>","functionName":"<candidateFunction>","note":"<在哪个调用链位置命中>"}

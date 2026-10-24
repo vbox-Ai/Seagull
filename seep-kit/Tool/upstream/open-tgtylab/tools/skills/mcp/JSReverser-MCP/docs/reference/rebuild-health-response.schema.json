@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jsreverser-mcp.local/docs/reference/rebuild-health-response.schema.json",
+  "title": "JSReverser MCP get_rebuild_health_report Response",
+  "description": "Draft schema for agent-facing get_rebuild_health_report responses.",
+  "x-schemaVersion": "1.0",
+  "allOf": [
+    {
+      "$ref": "./reverse-agent-response.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "outputMode": {
+          "type": "string",
+          "enum": ["compact", "verbose"]
+        },
+        "missingCapabilities": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "examples": [
+        {
+          "schemaVersion": "1.0",
+          "taskId": "task-demo-001",
+          "outputMode": "compact",
+          "responseSummary": "已生成任务 task-demo-001 的 rebuild health report。",
+          "outcome": "partial",
+          "shouldResume": false,
+          "shouldSwitchStrategy": true,
+          "detailLevel": "minimal",
+          "routeGuard": {
+            "preferredToolClass": "rebuild",
+            "routeHint": "switch_to_rebuild",
+            "avoidTools": ["understand_code"]
+          },
+          "continuation": {
+            "ready": true,
+            "reason": "已识别 task-demo-001 的补环境缺口，可直接转到 diff_env_requirements。",
+            "tool": "diff_env_requirements",
+            "params": {
+              "runtimeError": "window is not defined",
+              "observedCapabilities": ["window", "document"]
+            },
+            "invoke": {
+              "tool": "diff_env_requirements",
+              "params": {
+                "runtimeError": "window is not defined",
+                "observedCapabilities": ["window", "document"]
+              }
+            },
+            "invokeHint": {
+              "requiredParams": ["runtimeError", "observedCapabilities"],
+              "example": {
+                "runtimeError": "window is not defined",
+                "observedCapabilities": ["window", "document"]
+              }
+            },
+            "toolClass": "rebuild",
+            "routeHint": "switch_to_rebuild",
+            "strategy": "env-fix"
+          },
+          "missingCapabilities": ["window"]
+        }
+      ]
+    }
+  ]
+}

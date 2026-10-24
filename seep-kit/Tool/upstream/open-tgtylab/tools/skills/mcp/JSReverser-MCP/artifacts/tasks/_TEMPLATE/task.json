@@ -1,0 +1,23 @@
+{
+  "taskId": "<task-id>",
+  "slug": "<task-slug>",
+  "targetUrl": "<https://target.example/api>",
+  "goal": "<确认目标请求、完成 env rebuild、或提纯 pure algorithm>",
+  "currentStage": "Observe",
+  "targetContext": {
+    "pageUrl": "<https://target.example/page>",
+    "targetRequest": {
+      "method": "<GET|POST>",
+      "url": "<https://target.example/api>",
+      "notes": "<为什么这是目标请求>"
+    },
+    "triggerAction": "<页面上如何触发>",
+    "candidateScripts": ["<script url or bundle hint>"]
+  },
+  "successCriteria": {
+    "localRebuild": "<pass|partial|unknown>",
+    "serverAcceptance": "<pass|partial|unknown>",
+    "notes": "<本轮成功判定>"
+  },
+  "currentSummary": "<当前已确认部分，保持 1~3 句即可>"
+}

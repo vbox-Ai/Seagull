@@ -1,0 +1,2 @@
+{"ts":"<ISO8601>","stage":"observe","action":"<查看目标请求与 initiator>","result":"<确认目标请求与候选脚本>","next":"<开始最小侵入采样>"}
+{"ts":"<ISO8601>","stage":"capture","action":"<对 fetch / candidate function 下 hook>","result":"<拿到第一条可复用样本>","next":"<导出 env rebuild 入口>"}

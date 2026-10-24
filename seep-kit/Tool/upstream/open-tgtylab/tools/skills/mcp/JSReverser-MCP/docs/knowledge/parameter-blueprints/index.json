@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.0",
+  "libraryVersion": "2026-03-31",
+  "workflows": [
+    {
+      "id": "generic-header-sign",
+      "path": "generic-header-sign",
+      "aliases": ["x-sign", "header-sign", "header-signature", "sign"],
+      "keywords": ["header", "sign", "signature", "x-sign"],
+      "category": "header-signature",
+      "status": "stable",
+      "summary": "通用 header 签名参数的取证、回溯与 first divergence 排查流程。"
+    },
+    {
+      "id": "generic-query-token",
+      "path": "generic-query-token",
+      "aliases": ["query-token", "query-sign", "token"],
+      "keywords": ["query", "token", "sign", "a_bogus", "_signature"],
+      "category": "query-signature",
+      "status": "stable",
+      "summary": "通用 query token / sign 参数的取证、回溯与本地复现流程。"
+    },
+    {
+      "id": "jd-h5st",
+      "path": "jd-h5st",
+      "aliases": ["h5st", "x-h5st", "jd-h5st"],
+      "keywords": ["h5st", "jd", "x-h5st"],
+      "category": "header-signature",
+      "status": "stable",
+      "summary": "面向 h5st 类参数的详细流程，强调请求样本、hook 捕获、拼接顺序和升级分叉回溯。"
+    },
+    {
+      "id": "douyin-a-bogus",
+      "path": "douyin-a-bogus",
+      "aliases": ["a_bogus", "a-bogus", "douyin-a-bogus"],
+      "keywords": [
+        "a_bogus",
+        "a-bogus",
+        "douyin",
+        "resource/list",
+        "msToken",
+        "webid"
+      ],
+      "category": "query-signature",
+      "status": "stable",
+      "summary": "面向 a_bogus 的详细流程，强调 resource-list 请求、send-time patch、query 写点与 portable runtime。"
+    },
+    {
+      "id": "ks-hxfalcon",
+      "path": "ks-hxfalcon",
+      "aliases": ["__NS_hxfalcon", "hxfalcon", "ks-hxfalcon", "falcon"],
+      "keywords": [
+        "__NS_hxfalcon",
+        "hxfalcon",
+        "falcon",
+        "$encode",
+        "cat-version"
+      ],
+      "category": "risk-parameter",
+      "status": "stable",
+      "summary": "面向某手 falcon 风控参数的详细流程，强调 weak/strict 样本对照、VM bridge 与 strict-check 验证。"
+    }
+  ]
+}

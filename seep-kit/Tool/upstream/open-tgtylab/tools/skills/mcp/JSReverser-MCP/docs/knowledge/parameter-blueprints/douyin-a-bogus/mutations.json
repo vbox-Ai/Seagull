@@ -1,0 +1,43 @@
+{
+  "parameter": "a_bogus",
+  "mutations": [
+    {
+      "id": "send-time-patch-variant",
+      "applies_to_part": 6,
+      "kind": "transport-patch",
+      "base_algorithm": "query-write",
+      "mutation_summary": "最终 a_bogus 可能不是 query 构造阶段直接写入，而是在发送前通过 security helper 二次补丁。",
+      "logic": [
+        "先抓 URLSearchParams.append/set 结果",
+        "再抓 XHR/fetch 发送前 final URL",
+        "比较两者差异，确认 send-time patch"
+      ],
+      "reproduce_hint": "append/set 命中并不代表已经拿到最终 a_bogus，必须对比 send 前结果。",
+      "upgrade_watch": [
+        "patch helper 名称是否变化",
+        "patch 时机是否从 send 前提前到 query 构造时",
+        "resource-list 路由是否切换到新 wrapper"
+      ],
+      "confidence": "confirmed"
+    },
+    {
+      "id": "query-normalization-variant",
+      "applies_to_part": 1,
+      "kind": "serialization-variant",
+      "base_algorithm": "path-query-join",
+      "mutation_summary": "进入 signer 的 pathQuery 往往不是浏览器地址栏原样，而是经过自定义 normalize。",
+      "logic": [
+        "固定成功请求样本",
+        "抓 signer 前 pathQuery",
+        "比较 route query 字段顺序和编码后的差异"
+      ],
+      "reproduce_hint": "不要直接拿原始 URL 当 signer 输入，先确认 normalize 后文本。",
+      "upgrade_watch": [
+        "route query 排序是否变化",
+        "编码顺序是否变化",
+        "新增 query 字段是否参与签名"
+      ],
+      "confidence": "inferred"
+    }
+  ]
+}
