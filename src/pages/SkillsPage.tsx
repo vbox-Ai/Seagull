@@ -13,8 +13,9 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [layers, setLayers] = useState<SkillLayers>({ seep: [], rea: [] });
 
+  const reloadLayers = () => hs.skillLayers().then(setLayers);
   useEffect(() => {
-    hs.skillLayers().then(setLayers);
+    reloadLayers();
   }, []);
 
   useEffect(() => {
@@ -46,6 +47,9 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
               引擎技能随 seep-kit 分发，工作流技能随 REA 下发，注入技能库随提示词写入 AI 助手。
             </p>
           </div>
+          <button type="button" className="btn btn-ghost" onClick={reloadLayers}>
+            刷新总览
+          </button>
         </div>
         <div className="settings-panel">
           <div className="settings-row">

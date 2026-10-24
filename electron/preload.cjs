@@ -11,8 +11,7 @@ contextBridge.exposeInMainWorld("hs", {
   history: () => ipcRenderer.invoke("tool:history"),
   // 功能3：提示词管理
   promptsList: () => ipcRenderer.invoke("tool:prompts:list"),
-  promptsImport: (sourcePath) => ipcRenderer.invoke("tool:prompts:import", sourcePath),
-  promptsDelete: (name) => ipcRenderer.invoke("tool:prompts:delete", name),
+  promptsImport: (sourcePath) => ipcRenderer.invoke("tool:prompts:import", sourcePath),  promptsDelete: (name) => ipcRenderer.invoke("tool:prompts:delete", name),
   promptsSelect: (name) => ipcRenderer.invoke("tool:prompts:select", name),
   // 功能5：依赖检测/修复
   depsCheck: () => ipcRenderer.invoke("tool:deps:check"),
@@ -23,6 +22,8 @@ contextBridge.exposeInMainWorld("hs", {
   reaUninstall: () => ipcRenderer.invoke("tool:rea:uninstall"),
   // 功能7：故障诊断报告
   diagnose: () => ipcRenderer.invoke("tool:diagnose"),
+  // 通用文本导出（诊断报告导出等）
+  saveText: (defaultName, content) => ipcRenderer.invoke("tool:saveText", { defaultName, content }),
   // 功能6：远程配置热更新
   remoteFetch: (url) => ipcRenderer.invoke("tool:remote:fetch", url),
   install: (targetId) => ipcRenderer.invoke("tool:install", targetId),

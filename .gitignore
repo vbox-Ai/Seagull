@@ -3,6 +3,7 @@ node_modules/
 dist/
 release/
 release2/
+_shots/
 .electron-builder.*.json
 *.blockmap
 

@@ -25,6 +25,7 @@ import {
   IconCircleAlert,
   IconDatabase,
   IconGlobe,
+  IconHome,
   IconListChecks,
   IconUser,
 } from "./components/icons";
@@ -61,9 +62,9 @@ export function App() {
   const [toastLevel, setToastLevel] = useState<"success" | "error">("success");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try {
-      return localStorage.getItem("seagull-theme") === "light" ? "light" : "dark";
+      return localStorage.getItem("seagull-theme") === "dark" ? "dark" : "light";
     } catch {
-      return "dark";
+      return "light";
     }
   });
   const [jitterId, setJitterId] = useState<string | null>(null);
@@ -110,7 +111,13 @@ export function App() {
       setLevel(p.state === "running" ? "busy" : "idle");
     });
     const offNotify = hs.onNotify((p) => setToast(p.text));
-    const offRea = hs.onReaProgress((p) => setReaProgress(p));
+    const offRea = hs.onReaProgress((p) => {
+      setReaProgress(p);
+      // 部署完成 / 失败收尾：进度条短暂停留后立即消失，不再常驻
+      if (p.done) {
+        window.setTimeout(() => setReaProgress(null), 1200);
+      }
+    });
     return () => {
       offLog();
       offStatus();
@@ -299,6 +306,7 @@ export function App() {
                 level={level}
                 logText={logText}
                 onInstall={() => runInstall(currentTarget.id)}
+                onRestore={() => runRestoreMemory(currentTarget.id)}
                 onBack={() => {
                   setWizardTarget(null);
                   setView("home");
@@ -365,8 +373,9 @@ export function App() {
           </div>
         </div>
 
-        {/* 悬浮胶囊底栏：四入口只显示图标 */}
+        {/* 悬浮胶囊底栏：五入口只显示图标 */}
         <nav className="sg-dock" aria-label="主导航">
+          {dockItem("home", IconHome, "首页")}
           {dockItem("seep", IconDatabase, "Seep 逆向工作台")}
           {dockItem("skills", IconListChecks, "Skills 管理")}
           {dockItem("transfer", IconGlobe, "满血中转站")}

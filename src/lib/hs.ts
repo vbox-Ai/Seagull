@@ -62,7 +62,19 @@ export type DepsResult = { ok: boolean; deps: Dep[]; error?: string };
 // ---- 功能4：引擎管理 ----
 export type ReaState = { installed: boolean; version: string; downloading: boolean };
 export type EnginesState = { seep: SeepState; rea: ReaState };
-export type ReaProgress = { pct: number; label: string };
+export type ReaProgress = { pct: number; label: string; done?: boolean; failed?: boolean };
+
+/** 单个提示词文件的导入结果（zip 一个来源可产出多条）。 */
+export type PromptImportItem = { ok: boolean; name?: string; chars?: number; error?: string };
+export type PromptImportResult = {
+  ok: boolean;
+  imported?: number;
+  total?: number;
+  results: PromptImportItem[];
+  name?: string;
+  chars?: number;
+  error?: string;
+};
 
 // ---- 功能6：远程配置 ----
 export type RemoteResult = { ok: boolean; data?: unknown; error?: string };
@@ -77,7 +89,7 @@ export type HsApi = {
   overview(): Promise<Overview>;
   history(): Promise<HistoryEntry[]>;
   promptsList(): Promise<PromptFile[]>;
-  promptsImport(sourcePath?: string): Promise<{ ok: boolean; name?: string; chars?: number; error?: string }>;
+  promptsImport(sourcePath?: string | string[]): Promise<PromptImportResult>;
   promptsDelete(name: string): Promise<{ ok: boolean; error?: string }>;
   promptsSelect(name: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   depsCheck(): Promise<DepsResult>;
@@ -86,6 +98,8 @@ export type HsApi = {
   reaInstall(): Promise<InstallResult>;
   reaUninstall(): Promise<InstallResult>;
   diagnose(): Promise<string>;
+  /** 通用文本导出：弹保存框写入文件（诊断报告导出等）。 */
+  saveText(defaultName: string, content: string): Promise<{ ok: boolean; path?: string; error?: string }>;
   remoteFetch(url: string): Promise<RemoteResult>;
   install(targetId: string): Promise<InstallResult>;
   uninstall(targetId: string): Promise<InstallResult>;

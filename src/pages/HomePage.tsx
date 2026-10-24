@@ -1,6 +1,7 @@
 import type { Target } from "../data/targets";
 import type { Overview } from "../lib/hs";
 import { cx } from "../lib/cx";
+import { BrandIcon } from "../components/brand";
 
 type Props = {
   targets: Target[];
@@ -40,7 +41,9 @@ export function HomePage({ targets, overview, onOpen, onOpenTutorial }: Props) {
               onClick={() => onOpen(t.id)}
             >
               <span className="sg-card-top">
-                <span className="sg-card-icon">{t.icon}</span>
+                <span className="sg-card-icon">
+                  <BrandIcon id={t.icon} size={24} />
+                </span>
                 <span className={cx("sg-dot", on ? "on" : "off")} aria-hidden="true" />
               </span>
               <span>
@@ -56,7 +59,9 @@ export function HomePage({ targets, overview, onOpen, onOpenTutorial }: Props) {
         {/* 使用教程：海鸥青实心卡，尺寸与其他卡一致 */}
         <button type="button" className="sg-card tutorial" onClick={onOpenTutorial}>
           <span className="sg-card-top">
-            <span className="sg-card-icon">?</span>
+            <span className="sg-card-icon">
+              <BrandIcon id="tutorial" size={24} />
+            </span>
           </span>
           <span>
             <span className="sg-card-name">使用教程</span>

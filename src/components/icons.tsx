@@ -40,6 +40,7 @@ import {
   Globe2,
   GitFork,
   GitPullRequestArrow,
+  Home,
   Image,
   Info,
   Keyboard,
@@ -159,6 +160,8 @@ export const IconNewProject = icon(FolderPlus);
 export const IconGripVertical = icon(GripVertical);
 export const IconFileText = icon(FileText);
 export const IconGlobe = icon(Globe2);
+/** 底栏「首页」入口。 */
+export const IconHome = icon(Home);
 export const IconBranch = icon(GitFork);
 export const IconTerminal = icon(Terminal);
 export const IconPencil = icon(PencilLine);

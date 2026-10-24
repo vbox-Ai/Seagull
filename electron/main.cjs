@@ -552,10 +552,22 @@ function skillLayers() {
 
   const rea = [];
   const reaRoot = reaDir();
+  /**
+     REA 仓库的技能不在顶层，而是放在 .agents/skills/<name>/SKILL.md
+     （隐藏目录，早期只扫顶层导致「已部署但 Skills 管理显示 0 项」）。
+     这里把几种常见布局都扫一遍：.agents/skills、.claude/skills、skills、顶层。
+  */
+  const reaSkillRoots = [
+    path.join(reaRoot, ".agents", "skills"),
+    path.join(reaRoot, ".claude", "skills"),
+    path.join(reaRoot, "skills"),
+    reaRoot,
+  ];
   try {
-    if (fs.existsSync(reaRoot)) {
-      for (const d of fs.readdirSync(reaRoot, { withFileTypes: true })) {
-        if (d.isDirectory() && fs.existsSync(path.join(reaRoot, d.name, "SKILL.md"))) {
+    for (const root of reaSkillRoots) {
+      if (!fs.existsSync(root)) continue;
+      for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+        if (d.isDirectory() && fs.existsSync(path.join(root, d.name, "SKILL.md"))) {
           rea.push(d.name);
         }
       }
@@ -630,25 +642,126 @@ function listPromptFiles() {
   });
 }
 
-function importPromptFile(sourcePath) {
-  if (typeof sourcePath !== "string" || !sourcePath) return { ok: false, error: "空来源路径" };
+/**
+   目标文件名防冲突：重名时追加 -2、-3……直到不冲突。
+   批量导入 / zip 解包都可能撞名，统一从这里过。
+*/
+function uniquePromptDest(name) {
+  const dir = promptDir();
+  const stem = name.replace(/\.md$/i, "").replace(/[\\/:*?"<>|]/g, "_");
+  let dest = path.join(dir, stem + ".md");
+  let n = 1;
+  while (fs.existsSync(dest)) {
+    n += 1;
+    dest = path.join(dir, stem + "-" + n + ".md");
+  }
+  return dest;
+}
+
+/** 把一段文本作为新的 .md 提示词写进 memory/，返回结果对象。 */
+function writePromptText(baseName, text) {
+  if (!text || !text.trim()) return { ok: false, name: baseName, error: "内容为空" };
+  try {
+    fs.mkdirSync(promptDir(), { recursive: true });
+    const dest = uniquePromptDest(baseName);
+    fs.writeFileSync(dest, text, "utf8");
+    return { ok: true, name: path.basename(dest), chars: text.trim().length };
+  } catch (e) {
+    return { ok: false, name: baseName, error: "写入失败：" + String(e.message) };
+  }
+}
+
+/** 用系统 tar（Win10+ 的 bsdtar 支持 zip）把 zip 解到临时目录，返回解压目录。 */
+function extractZipToTemp(zipPath) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "seagull-prompt-"));
+  return new Promise((resolve, reject) => {
+    const t = spawn("tar", ["-xf", zipPath, "-C", tmp], { windowsHide: true });
+    t.on("close", (code) => (code === 0 ? resolve(tmp) : reject(new Error("tar 解压退出码 " + code))));
+    t.on("error", reject);
+  });
+}
+
+/** 递归收集目录下所有 .md/.txt 文件。 */
+function collectPromptFiles(dir, out = []) {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) collectPromptFiles(full, out);
+    else if (/\.(md|txt)$/i.test(e.name) && !/^readme\.md$/i.test(e.name)) out.push(full);
+  }
+  return out;
+}
+
+/**
+   导入一个来源文件到提示词库：
+   * .md  → 原样入库
+   * .txt → 内容入库，文件名转成 .md（注入脚本只认 .md）
+   * .zip → 解包后取里面所有 .md/.txt，逐个入库（支持带目录结构的压缩包）
+   返回 { results: [...] }，一个来源可能产出多份提示词（zip）。
+*/
+async function importPromptFile(sourcePath) {
+  if (typeof sourcePath !== "string" || !sourcePath) return { ok: false, error: "空来源路径", results: [] };
   const src = path.resolve(sourcePath);
+  const base = path.basename(src);
+  const results = [];
+  try {
+    if (!fs.existsSync(src)) return { ok: false, error: "文件不存在：" + base, results };
+  } catch (e) {
+    return { ok: false, error: String(e.message), results };
+  }
+
+  if (/\.zip$/i.test(src)) {
+    let tmp = null;
+    try {
+      tmp = await extractZipToTemp(src);
+      const files = collectPromptFiles(tmp);
+      if (files.length === 0) {
+        results.push({ ok: false, name: base, error: "压缩包里没有 .md/.txt 文件" });
+      }
+      for (const f of files) {
+        let text = "";
+        try {
+          text = fs.readFileSync(f, "utf8");
+        } catch (e) {
+          results.push({ ok: false, name: path.basename(f), error: "读取失败：" + String(e.message) });
+          continue;
+        }
+        results.push(writePromptText(path.basename(f), text));
+      }
+    } catch (e) {
+      results.push({ ok: false, name: base, error: "解压失败：" + String(e.message) });
+    } finally {
+      try {
+        if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+      } catch {
+        /* 临时目录留着无妨 */
+      }
+    }
+    const okCount = results.filter((r) => r.ok).length;
+    return { ok: okCount > 0, results, imported: okCount };
+  }
+
+  if (!/\.(md|txt)$/i.test(src)) {
+    return { ok: false, error: "只支持 .md / .txt / .zip：" + base, results };
+  }
+
   let text;
   try {
     text = fs.readFileSync(src, "utf8");
   } catch (e) {
-    return { ok: false, error: "读取失败：" + String(e.message) };
+    return { ok: false, error: "读取失败：" + String(e.message), results };
   }
-  if (!text.trim()) return { ok: false, error: "文件内容为空" };
-  const name = path.basename(src);
-  const dest = path.join(promptDir(), name);
-  try {
-    fs.mkdirSync(promptDir(), { recursive: true });
-    fs.writeFileSync(dest, text, "utf8");
-  } catch (e) {
-    return { ok: false, error: "写入失败：" + String(e.message) };
-  }
-  return { ok: true, name, chars: text.trim().length };
+  if (!text.trim()) return { ok: false, error: "文件内容为空：" + base, results };
+  // .txt 统一转成 .md 文件名入库，后续列表 / 选择 / 注入逻辑只处理一种格式
+  const mdName = base.replace(/\.(txt|markdown)$/i, "") + ".md";
+  const r = writePromptText(mdName, text);
+  results.push(r);
+  return { ok: r.ok, name: r.name, chars: r.chars, results, imported: r.ok ? 1 : 0 };
 }
 
 function deletePromptFile(name) {
@@ -823,12 +936,13 @@ async function reaInstall() {
       t.on("close", (code) => (code === 0 ? resolve() : reject(new Error("tar 退出码 " + code))));
       t.on("error", reject);
     });
-    send("tool:rea:progress", { pct: 100, label: "REA 部署完成" });
+    send("tool:rea:progress", { pct: 100, label: "REA 部署完成", done: true });
     appendHistory({ action: "rea-install", target: "rea", prompt: "", ok: true });
     return { ok: true, code: 0, out: "REA 已部署到 " + dest, timedOut: false };
   } catch (e) {
     const msg = String((e && e.message) || e);
-    send("tool:rea:progress", { pct: 0, label: "REA 下载失败：" + msg });
+    // done: true 让渲染端把进度条收掉，失败信息短暂展示后不再常驻
+    send("tool:rea:progress", { pct: 0, label: "REA 下载失败：" + msg, done: true, failed: true });
     appendHistory({ action: "rea-install", target: "rea", prompt: "", ok: false, detail: msg });
     return { ok: false, code: -1, out: msg, timedOut: false, error: msg };
   } finally {
@@ -932,21 +1046,38 @@ function registerIpc() {
   // ---- 功能3：提示词管理 ----
   ipcMain.handle("tool:prompts:list", () => listPromptFiles());
   ipcMain.handle("tool:prompts:import", async (_e, sourcePath) => {
-    let src = sourcePath;
-    // 未传来源时弹系统文件选择器，只挑 .md/.txt
-    if (!src) {
+    let sources = [];
+    if (Array.isArray(sourcePath)) {
+      sources = sourcePath.filter((s) => typeof s === "string" && s);
+    } else if (typeof sourcePath === "string" && sourcePath) {
+      sources = [sourcePath];
+    } else {
+      // 未传来源时弹系统文件选择器：.md / .txt 单文件，.zip 压缩包，支持一次多选
       const r = await dialog.showOpenDialog(win, {
-        title: "导入提示词",
+        title: "导入提示词（可多选，支持 .md / .txt / .zip）",
         filters: [
-          { name: "Markdown / 文本", extensions: ["md", "txt"] },
+          { name: "提示词（md / txt / zip）", extensions: ["md", "txt", "zip"] },
           { name: "所有文件", extensions: ["*"] },
         ],
-        properties: ["openFile"],
+        properties: ["openFile", "multiSelections"],
       });
-      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, error: "已取消" };
-      src = r.filePaths[0];
+      if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消", results: [] };
+      sources = r.filePaths;
     }
-    return importPromptFile(src);
+    const results = [];
+    for (const src of sources) {
+      // eslint-disable-next-line no-await-in-loop -- 顺序写入，重名自动让位
+      const r = await importPromptFile(src);
+      results.push(...(r.results && r.results.length ? r.results : [r]));
+    }
+    const okCount = results.filter((x) => x.ok).length;
+    return {
+      ok: okCount > 0,
+      imported: okCount,
+      total: results.length,
+      results,
+      error: okCount === 0 ? results.map((x) => x.error).filter(Boolean).join("；") : undefined,
+    };
   });
   ipcMain.handle("tool:prompts:delete", (_e, name) => deletePromptFile(name));
   ipcMain.handle("tool:prompts:select", (_e, name) => selectPromptFile(name));
@@ -962,6 +1093,24 @@ function registerIpc() {
 
   // ---- 功能7：故障诊断报告 ----
   ipcMain.handle("tool:diagnose", () => diagnose());
+
+  /** 通用文本导出：弹保存框，把 content 写成文件（诊断报告等用）。 */
+  ipcMain.handle("tool:saveText", async (_e, payload) => {
+    const { defaultName, content } = payload || {};
+    if (typeof content !== "string" || !content.trim()) return { ok: false, error: "内容为空" };
+    const name = typeof defaultName === "string" && defaultName.trim() ? defaultName.trim() : "report.txt";
+    const r = await dialog.showSaveDialog(win, {
+      title: "导出文件",
+      defaultPath: name,
+    });
+    if (r.canceled || !r.filePath) return { ok: false, error: "已取消" };
+    try {
+      fs.writeFileSync(r.filePath, content, "utf8");
+      return { ok: true, path: r.filePath };
+    } catch (e) {
+      return { ok: false, error: "写入失败：" + String(e.message) };
+    }
+  });
 
   // ---- 功能6：远程配置热更新 ----
   ipcMain.handle("tool:remote:fetch", (_e, url) => fetchRemoteConfig(url));

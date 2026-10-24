@@ -90,7 +90,13 @@
   min-height: 148px;
   border: 1px solid var(--ds-border-default);
   border-radius: var(--radius-lg);
-  background: var(--ds-bg-elevated-opaque);
+  /* 立体感：顶部高光渐变 + 内描边，卡片不再是一块平板 */
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--sg-accent) 4%, transparent) 0%, transparent 42%),
+    var(--ds-bg-elevated-opaque);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 color-mix(in oklab, #ffffff 55%, transparent);
   padding: 16px;
   cursor: pointer;
   user-select: none;
@@ -101,9 +107,14 @@
 }
 
 .sg-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: color-mix(in oklab, var(--sg-accent) 55%, transparent);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  /* 悬停：双层投影 + 底部海鸥青反光，浮起的感觉更实 */
+  box-shadow:
+    0 14px 28px -8px rgba(0, 0, 0, 0.22),
+    0 4px 10px rgba(0, 0, 0, 0.1),
+    0 1px 0 0 color-mix(in oklab, var(--sg-accent) 35%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #ffffff 70%, transparent);
 }
 
 .sg-card:active {
@@ -125,14 +136,22 @@
 .sg-card-icon {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-sm);
-  background: var(--sg-accent-soft);
+  /* 图标砖：轻渐变 + 底部内阴影，带一点浮雕感 */
+  background: linear-gradient(180deg, color-mix(in oklab, var(--sg-accent) 20%, transparent) 0%, var(--sg-accent-soft) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 45%, transparent),
+    inset 0 -2px 4px color-mix(in oklab, var(--sg-accent) 18%, transparent);
   color: var(--sg-accent);
   font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--tracking-tight);
+}
+
+.sg-card-icon svg {
+  filter: drop-shadow(0 1px 1px color-mix(in oklab, var(--sg-accent) 25%, transparent));
 }
 
 .sg-card-name {
@@ -390,4 +409,89 @@
   line-height: var(--leading-relaxed);
   white-space: pre-wrap;
   user-select: text;
+}
+
+/* ---------- 注入日志视图：按行分类上色 ---------- */
+
+.sg-log {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 320px;
+  overflow: auto;
+  user-select: text;
+}
+
+.sg-log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  word-break: break-all;
+}
+
+.sg-log-mark {
+  flex: 0 0 auto;
+  font-weight: var(--font-weight-bold);
+}
+
+.sg-log-text {
+  min-width: 0;
+}
+
+/* 完成/成功：绿 */
+.sg-log-line.ok {
+  border-left-color: var(--ds-success);
+  background: color-mix(in oklab, var(--ds-success) 8%, transparent);
+  color: var(--ds-text-primary);
+}
+
+.sg-log-line.ok .sg-log-mark {
+  color: var(--ds-success);
+}
+
+/* 失败/错误：红 */
+.sg-log-line.err {
+  border-left-color: var(--ds-error, #d64545);
+  background: color-mix(in oklab, var(--ds-error, #d64545) 8%, transparent);
+  color: var(--ds-text-primary);
+}
+
+.sg-log-line.err .sg-log-mark {
+  color: var(--ds-error, #d64545);
+}
+
+/* 警告/跳过：黄 */
+.sg-log-line.warn {
+  border-left-color: #c9962c;
+  background: color-mix(in oklab, #c9962c 10%, transparent);
+  color: var(--ds-text-primary);
+}
+
+.sg-log-line.warn .sg-log-mark {
+  color: #c9962c;
+}
+
+/* 计时行：弱化灰 */
+.sg-log-line.time {
+  color: var(--ds-text-faint);
+}
+
+.sg-log-line.time .sg-log-mark {
+  color: var(--ds-text-faint);
+}
+
+/* 普通信息行 */
+.sg-log-line.info {
+  color: var(--ds-text-secondary);
+  border-left-color: var(--ds-border-subtle);
+}
+
+.sg-log-line.info .sg-log-mark {
+  color: var(--ds-text-faint);
 }

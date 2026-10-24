@@ -35,7 +35,13 @@ export function ProfilePage({ version, status, level, theme, onToggleTheme, onOp
 
   const importPrompt = async () => {
     const r = await hs.promptsImport();
-    setPromptMsg(r.ok ? `已导入：${r.name}` : r.error || "导入失败");
+    if (r.ok && (r.results?.length || 0) > 1) {
+      // 批量导入：逐条列出成功/失败，一眼看清哪几份进来了
+      const lines = r.results.map((x) => (x.ok ? `✓ ${x.name}（${x.chars} 字）` : `✕ ${x.name || "未知"}：${x.error}`));
+      setPromptMsg(`已导入 ${r.imported}/${r.total} 份：\n` + lines.join("\n"));
+    } else {
+      setPromptMsg(r.ok ? `已导入：${r.name || (r.results && r.results[0]?.name)}` : r.error || "导入失败");
+    }
     reload();
   };
 
@@ -134,14 +140,18 @@ export function ProfilePage({ version, status, level, theme, onToggleTheme, onOp
       <div className="settings-card-block">
         <div className="settings-card-heading-row">
           <h2 className="settings-card-heading">提示词管理</h2>
-          <p className="settings-card-description">导入 / 删除 / 设为当前注入源（对应安装脚本 -SourcePrompt）。</p>
+          <p className="settings-card-description">导入 / 删除 / 设为当前注入源（对应安装脚本 -SourcePrompt）。支持 .md / .txt / .zip（可多选，zip 自动解包）。</p>
         </div>
         <div className="app-inline-actions">
           <button type="button" className="btn btn-primary" onClick={importPrompt}>
             导入提示词
           </button>
         </div>
-        {promptMsg && <p className="settings-card-description">{promptMsg}</p>}
+        {promptMsg && (
+          <p className="settings-card-description" style={{ whiteSpace: "pre-wrap" }}>
+            {promptMsg}
+          </p>
+        )}
         {prompts.length === 0 ? (
           <p className="settings-card-description">提示词库为空。</p>
         ) : (

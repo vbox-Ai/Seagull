@@ -3,6 +3,8 @@ import type { Target } from "../data/targets";
 import type { StatusLevel } from "../App";
 import type { EnginesState, PromptFile, ReaProgress } from "../lib/hs";
 import { cx } from "../lib/cx";
+import { BrandIcon } from "../components/brand";
+import { LogView } from "../components/LogView";
 
 type Props = {
   target: Target;
@@ -16,6 +18,7 @@ type Props = {
   level: StatusLevel;
   logText: string;
   onInstall: () => void;
+  onRestore: () => void;
   onBack: () => void;
   onManagePrompts: () => void;
 };
@@ -35,6 +38,7 @@ export function Wizard({
   level,
   logText,
   onInstall,
+  onRestore,
   onBack,
   onManagePrompts,
 }: Props) {
@@ -65,7 +69,9 @@ export function Wizard({
           <h2 className="sg-wizard-title">{target.title}</h2>
           <p className="app-prose">{target.desc}</p>
           <div className="sg-engine-row">
-            <span className="sg-card-icon">{target.icon}</span>
+            <span className="sg-card-icon">
+              <BrandIcon id={target.icon} size={24} />
+            </span>
             <div>
               <div className="sg-engine-name">{target.nav}</div>
               <div className="sg-engine-desc">确认目标平台无误后进入下一步</div>
@@ -74,6 +80,9 @@ export function Wizard({
           <div className="sg-wizard-actions">
             <button type="button" className="btn btn-ghost" onClick={onBack}>
               返回首页
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestore}>
+              还原恢复
             </button>
             <button type="button" className="btn btn-primary" onClick={next}>
               下一步
@@ -181,6 +190,9 @@ export function Wizard({
             <button type="button" className="btn btn-ghost" onClick={prev} disabled={busy}>
               上一步
             </button>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestore}>
+              {busy ? "执行中 …" : "还原恢复"}
+            </button>
             <button type="button" className="btn btn-primary" disabled={busy} onClick={onInstall}>
               {busy ? "执行中 …" : "开始注入"}
             </button>
@@ -195,7 +207,7 @@ export function Wizard({
               </div>
               {logText ? (
                 <div className="panel-card" style={{ padding: "12px 14px" }}>
-                  <pre className="app-pre">{logText}</pre>
+                  <LogView text={logText} />
                 </div>
               ) : null}
             </div>

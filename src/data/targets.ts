@@ -17,7 +17,7 @@ export type Target = {
   desc: string;
   /** 卸载按钮文案；没有该字段表示不支持卸载 */
   uninstallLabel: string;
-  /** 主视觉卡片的图标字 */
+  /** 主视觉卡片的品牌图标键（对应 components/brand.tsx 的 BRAND_ICONS） */
   icon: string;
 };
 
@@ -29,7 +29,7 @@ const TARGET_DESC =
 export const TARGETS: Target[] = [
   {
     id: "codex",
-    icon: "Cx",
+    icon: "codex",
     nav: "Codex 破甲",
     eyebrow: "CODEX 顶尖模型",
     title: "顶尖破甲",
@@ -38,7 +38,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "zcode",
-    icon: "Zc",
+    icon: "zcode",
     nav: "ZCode 破甲",
     eyebrow: "ZCODE 破甲",
     title: "ZCode 破甲",
@@ -47,7 +47,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "cursor",
-    icon: "Cu",
+    icon: "cursor",
     nav: "Cursor 破甲",
     eyebrow: "CURSOR 破甲",
     title: "Cursor 破甲",
@@ -57,7 +57,7 @@ export const TARGETS: Target[] = [
   {
     // OpenCode：全局规则 ~/.config/opencode/AGENTS.md，技能 ~/.config/opencode/skills
     id: "opencode",
-    icon: "Oc",
+    icon: "opencode",
     nav: "OpenCode 破甲",
     eyebrow: "OPENCODE 破甲",
     title: "OpenCode 破甲",
@@ -66,7 +66,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "claude",
-    icon: "Cl",
+    icon: "claude",
     nav: "Claude 破甲",
     eyebrow: "CLAUDE 破甲",
     title: "Claude 破甲",
@@ -75,7 +75,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "workbuddy",
-    icon: "Wb",
+    icon: "workbuddy",
     nav: "WorkBuddy 破甲",
     eyebrow: "WORKBUDDY 破甲（国际版）",
     title: "WorkBuddy 破甲（国际版）",
@@ -86,7 +86,7 @@ export const TARGETS: Target[] = [
     // WorkBuddy 国内版：同一个程序的两套发行，数据目录不同
     // （国际版 ~/.workbuddy-ai，国内版 ~/.workbuddy），清理时同样要分开处理。
     id: "workbuddy-cn",
-    icon: "Wb",
+    icon: "workbuddy",
     nav: "WorkBuddy 国内版",
     eyebrow: "WORKBUDDY 破甲（国内版）",
     title: "WorkBuddy 破甲（国内版）",
@@ -95,7 +95,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "dsh",
-    icon: "Ds",
+    icon: "dsh",
     nav: "DeepSeek Harness 破甲",
     eyebrow: "DEEPSEEK HARNESS 破甲",
     title: "DeepSeek Harness 破甲",
@@ -104,7 +104,7 @@ export const TARGETS: Target[] = [
   },
   {
     id: "doubao",
-    icon: "Db",
+    icon: "doubao",
     nav: "豆包破甲",
     eyebrow: "豆包（Doubao）",
     title: "豆包破甲",

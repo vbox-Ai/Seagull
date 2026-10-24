@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { StatusLevel } from "../App";
 import { hs, type Dep, type ReaProgress, type ReaState, type SeepState } from "../lib/hs";
 import { cx } from "../lib/cx";
+import { LogView } from "../components/LogView";
 import { SeepPage } from "./SeepPage";
 
 type Props = {
@@ -31,11 +32,21 @@ export function EnginesPage({
   const [deps, setDeps] = useState<Dep[] | null>(null);
   const [depsError, setDepsError] = useState("");
   const [depsBusy, setDepsBusy] = useState(false);
+  const [depsMsg, setDepsMsg] = useState("");
+  const [fixLog, setFixLog] = useState("");
+  const [fixing, setFixing] = useState(false);
   const [report, setReport] = useState("");
+  const [reportMsg, setReportMsg] = useState("");
 
   useEffect(() => {
     hs.enginesState().then((s) => setRea(s.rea));
-    const off = hs.onReaProgress((p) => setReaProgress(p));
+    const off = hs.onReaProgress((p) => {
+      setReaProgress(p);
+      // 完成 / 失败收尾：进度条短暂停留后立即消失
+      if (p.done) {
+        window.setTimeout(() => setReaProgress(null), 1200);
+      }
+    });
     return off;
   }, []);
 
@@ -43,8 +54,10 @@ export function EnginesPage({
 
   const runReaInstall = async () => {
     setReaProgress({ pct: 0, label: "启动 REA 部署 …" });
-    await hs.reaInstall();
-    refreshRea();
+    const r = await hs.reaInstall();
+    await refreshRea();
+    // 兜底：无论事件时序如何，下发结束后进度条都不该挂着
+    window.setTimeout(() => setReaProgress(null), r.ok ? 1200 : 4000);
   };
 
   const runReaUninstall = async () => {
@@ -61,15 +74,40 @@ export function EnginesPage({
     setDepsBusy(false);
   };
 
+  /**
+     修复依赖：修复脚本可能跑几十分钟，必须把实时日志和忙碌状态都亮出来，
+     否则用户以为按钮没反应。日志走本地订阅，只显示修复输出。
+  */
   const runDepsFix = async () => {
-    setDepsBusy(true);
-    await hs.depsFix();
-    setDepsBusy(false);
-    runDepsCheck();
+    if (fixing) return;
+    setFixing(true);
+    setDepsMsg("正在修复依赖，请耐心等待（首次修复需要下载工具链，可能需要较长时间）…");
+    setFixLog("");
+    const off = hs.onLog((p) => setFixLog((prev) => (prev + p.text).slice(-20000)));
+    try {
+      const r = await hs.depsFix();
+      setDepsMsg(
+        r.ok
+          ? "依赖修复完成，正在重新检测 …"
+          : "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
+      );
+    } finally {
+      off();
+      setFixing(false);
+      runDepsCheck();
+    }
   };
 
   const runDiagnose = async () => {
+    setReportMsg("");
     setReport(await hs.diagnose());
+  };
+
+  const exportReport = async () => {
+    if (!report) return;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const r = await hs.saveText(`海鸥V8-诊断报告-${stamp}.txt`, report);
+    setReportMsg(r.ok ? "报告已导出到：" + r.path : r.error || "导出失败");
   };
 
   return (
@@ -137,13 +175,19 @@ export function EnginesPage({
           </div>
         </div>
         <div className="app-inline-actions">
-          <button type="button" className="btn btn-secondary" disabled={depsBusy} onClick={runDepsCheck}>
-            检测依赖
+          <button type="button" className="btn btn-secondary" disabled={depsBusy || fixing} onClick={runDepsCheck}>
+            {depsBusy ? "检测中 …" : "检测依赖"}
           </button>
-          <button type="button" className="btn btn-primary" disabled={depsBusy} onClick={runDepsFix}>
-            修复依赖
+          <button type="button" className="btn btn-primary" disabled={depsBusy || fixing} onClick={runDepsFix}>
+            {fixing ? "修复中 …" : "修复依赖"}
           </button>
         </div>
+        {depsMsg && <p className="settings-card-description">{depsMsg}</p>}
+        {fixing && fixLog && (
+          <div className="panel-card" style={{ padding: "12px 14px", marginTop: 10 }}>
+            <LogView text={fixLog} />
+          </div>
+        )}
         {deps && (
           <div className="sg-engine-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
             {deps.map((d) => (
@@ -171,7 +215,11 @@ export function EnginesPage({
           <button type="button" className="btn btn-secondary" onClick={runDiagnose}>
             生成报告
           </button>
+          <button type="button" className="btn btn-secondary" disabled={!report} onClick={exportReport}>
+            导出报告
+          </button>
         </div>
+        {reportMsg && <p className="settings-card-description">{reportMsg}</p>}
         {report && <pre className="sg-report">{report}</pre>}
       </div>
     </div>
