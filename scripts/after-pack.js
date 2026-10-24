@@ -47,41 +47,43 @@ exports.default = async function afterPack(context) {
     return;
   }
 
+  const appRoot = path.join(__dirname, "..");
+
+  // 图标与版本信息写入：rcedit 在 winCodeSign 包里，没解压就跳过，
+  // 但绝不能因它缺失而 early-return —— 下面的卸载脚本拷贝必须照常执行。
   const rcedit = findRcedit();
   if (!rcedit) {
     console.log("[after-pack] 没找到 rcedit-x64.exe，跳过图标写入");
-    return;
-  }
-
-  // 按变体选图标（build.mjs 会先把 PNG 转成 .ico）
-  const appRoot = path.join(__dirname, "..");
-  let variant = "free";
-  try {
-    variant = JSON.parse(fs.readFileSync(path.join(appRoot, "variant.json"), "utf8")).variant;
-  } catch {
-    /* 用默认 */
-  }
-  const ico = path.join(appRoot, "build", variant === "pro" ? "icon-pro.ico" : "icon.ico");
-
-  const args = [
-    exePath,
-    "--set-version-string", "ProductName", productName,
-    "--set-version-string", "FileDescription", productName,
-    "--set-version-string", "CompanyName", "寒霜",
-    "--set-file-version", "1.0.0",
-    "--set-product-version", "1.0.0",
-  ];
-  if (fs.existsSync(ico)) {
-    args.push("--set-icon", ico);
   } else {
-    console.log("[after-pack] 图标文件不存在，只写版本信息:", ico);
-  }
+    // 按变体选图标（build.mjs 会先把 PNG 转成 .ico）
+    let variant = "free";
+    try {
+      variant = JSON.parse(fs.readFileSync(path.join(appRoot, "variant.json"), "utf8")).variant;
+    } catch {
+      /* 用默认 */
+    }
+    const ico = path.join(appRoot, "build", variant === "pro" ? "icon-pro.ico" : "icon.ico");
 
-  try {
-    execFileSync(rcedit, args, { stdio: "inherit" });
-    console.log("[after-pack] 已写入图标与版本信息:", path.basename(exePath));
-  } catch (e) {
-    console.log("[after-pack] rcedit 失败:", String(e && e.message));
+    const args = [
+      exePath,
+      "--set-version-string", "ProductName", productName,
+      "--set-version-string", "FileDescription", productName,
+      "--set-version-string", "CompanyName", "寒霜",
+      "--set-file-version", "1.0.0",
+      "--set-product-version", "1.0.0",
+    ];
+    if (fs.existsSync(ico)) {
+      args.push("--set-icon", ico);
+    } else {
+      console.log("[after-pack] 图标文件不存在，只写版本信息:", ico);
+    }
+
+    try {
+      execFileSync(rcedit, args, { stdio: "inherit" });
+      console.log("[after-pack] 已写入图标与版本信息:", path.basename(exePath));
+    } catch (e) {
+      console.log("[after-pack] rcedit 失败:", String(e && e.message));
+    }
   }
 
   // 便携版一键卸载：把脚本拷到应用根目录，解压后跟 exe 并排，双击即可完全卸载。
