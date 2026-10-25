@@ -1,4 +1,9 @@
-﻿# install-workbuddy.ps1 — WorkBuddy AI 破甲：全局记忆 + 文件记忆 + skills 一键装/卸
+﻿# install-workbuddy.ps1 — WorkBuddy AI 破甲：全局记忆 + 文件记忆 + skills + 发送层 bundle 一键装/卸
+#
+# 注入方式自动分流（WorkBuddy 记忆载体上限 10000 字符）：
+#   提示词 <=10000 字符 -> 记忆文件注入（云记忆档案 + MEMORY.md + 记忆总闸）
+#   提示词 > 10000 字符 -> bundle 注入（改 app.asar.unpacked\cli\dist 的发送 bundle，
+#                          每次发送现读人格文件，绕过记忆截断）；无 unpacked 锚点时回退记忆文件
 #
 # 注入点（全部实测确认，见 app.asar 内 user-memory-collector.ts / path-resolver.ts /
 # working-memory-reminder-section.ts / domains-skills skill-overrides.ts）：
@@ -137,18 +142,34 @@ function Set-AppConfigFlags([string]$Path, [hashtable]$Patch) {
 
 function Get-NowIso { return (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.000Z') }
 
-function Resolve-InstallRoot([string]$explicit) {
+function Resolve-InstallRoot([string]$explicit, [string]$productName = '') {
     # 只返回"真实存在"的目录：注册表常残留指向已卸载盘符的 InstallLocation
-    # （例如 D:\ 但机器没有 D 盘），直接拿去 Join-Path 会抛 DriveNotFoundException 把安装打断
+    # （例如 D:\ 但机器没有 D 盘），直接拿去 Join-Path 会抛 DriveNotFoundException 把安装打断。
+    # productName = WorkBuddy（国版）/ WorkBuddyAI（国际版）/ 空（两版都找）
+    $exeNames = @()
+    if ($productName -eq 'WorkBuddy') { $exeNames = @('WorkBuddy.exe') }
+    elseif ($productName -eq 'WorkBuddyAI') { $exeNames = @('WorkBuddyAI.exe') }
+    else { $exeNames = @('WorkBuddyAI.exe', 'WorkBuddy.exe') }
     $cands = @()
     if ($explicit) { $cands += $explicit }
-    $proc = Get-Process WorkBuddyAI -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($proc -and $proc.Path) { $cands += (Split-Path -Parent $proc.Path) }
+    foreach ($en in $exeNames) {
+        $pn = [System.IO.Path]::GetFileNameWithoutExtension($en)
+        $proc = Get-Process -Name $pn -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($proc -and $proc.Path) { $cands += (Split-Path -Parent $proc.Path) }
+    }
+    $displayPattern = if ($productName -eq 'WorkBuddy') { '^WorkBuddy(?!\s*AI)(?:\s|$)' }
+                      elseif ($productName -eq 'WorkBuddyAI') { '^WorkBuddy\s*AI(?:\s|$)' }
+                      else { '' }
     foreach ($rp in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
                       'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
                       'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
-        $item = Get-ItemProperty $rp -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -like '*WorkBuddy*' -and $_.InstallLocation } | Select-Object -First 1
+        $items = Get-ItemProperty $rp -ErrorAction SilentlyContinue
+        $item = $null
+        if ($displayPattern) {
+            $item = $items | Where-Object { $_.DisplayName -and ($_.DisplayName -match $displayPattern) -and $_.InstallLocation } | Select-Object -First 1
+        } else {
+            $item = $items | Where-Object { $_.DisplayName -like '*WorkBuddy*' -and $_.InstallLocation } | Select-Object -First 1
+        }
         if ($item) { $cands += ($item.InstallLocation -replace '^"|"$', '').TrimEnd('\') }
     }
     foreach ($c in $cands) {
@@ -223,10 +244,28 @@ if (-not ($Uninstall -or $RestoreMemory)) {
 if (-not $SkillsSource) { $SkillsSource = if ($Version -eq 'v4') { 'codex-skills-v4' } else { 'codex-skills' } }
 $skillsSourceDir = Join-Path $Root $SkillsSource
 
-$InstallRoot = Resolve-InstallRoot $InstallRoot
+# 版本判定（先猜后校准）：数据目录名决定客户端主程序名。
+#   国版   ~/.workbuddy    -> WorkBuddy.exe
+#   国际版 ~/.workbuddy-ai -> WorkBuddyAI.exe
+$productGuess = ''
+if ($ConfigDir) {
+    $leafGuess = Split-Path -Leaf $ConfigDir
+    if ($leafGuess -eq '.workbuddy') { $productGuess = 'WorkBuddy' }
+    elseif ($leafGuess -eq '.workbuddy-ai') { $productGuess = 'WorkBuddyAI' }
+}
+$InstallRoot = Resolve-InstallRoot $InstallRoot $productGuess
 # 是否由调用方显式指定了数据目录（国内版固定传 ~/.workbuddy）
 $configDirPinned = -not [string]::IsNullOrWhiteSpace($ConfigDir)
 $ConfigDir = Resolve-ConfigDir $ConfigDir $InstallRoot
+# 数据目录落定后再校准版本名与安装目录，避免国际版目录名被起成别的名字时串到另一版
+$ProductName = ''
+$leafFinal = Split-Path -Leaf $ConfigDir
+if ($leafFinal -eq '.workbuddy') { $ProductName = 'WorkBuddy' }
+elseif ($leafFinal -eq '.workbuddy-ai') { $ProductName = 'WorkBuddyAI' }
+else { $ProductName = $productGuess }
+if ($ProductName -and ($ProductName -ne $productGuess -or -not $InstallRoot)) {
+    $InstallRoot = Resolve-InstallRoot '' $ProductName
+}
 # 跨账户兜底：本账户目录里没有 WorkBuddy 数据（memory 子目录）时，改用它账户下真实存在的那份。
 # 但显式指定数据目录时不能兜底：国内版固定 ~/.workbuddy，该目录在首次登录前还没有 memory，
 # 一兜底就会切到国际版 ~/.workbuddy-ai（或别的 Windows 账户），整份注入跑到另一个版本上，
@@ -265,7 +304,7 @@ Write-Host "== WorkBuddy 破甲 ==" -ForegroundColor Cyan
 Write-Host "  安装目录 : $(if ($InstallRoot) { $InstallRoot } else { '未找到（不影响注入）' })"
 Write-Host "  配置目录 : $ConfigDir"
 $variant = if ((Split-Path -Leaf $ConfigDir) -eq '.workbuddy') { '国版' } elseif ((Split-Path -Leaf $ConfigDir) -eq '.workbuddy-ai') { '国际版' } else { '自定义/品牌版' }
-Write-Host "  版本判定 : $variant（数据目录 $(Split-Path -Leaf $ConfigDir)）" -ForegroundColor Cyan
+Write-Host "  版本判定 : $variant（数据目录 $(Split-Path -Leaf $ConfigDir)，主程序 $(if ($ProductName) { $ProductName } else { 'WorkBuddyAI' })）" -ForegroundColor Cyan
 Write-Host "  用户 uid : $(if ($Uid) { $Uid } elseif ($archFiles.Count -gt 0) { "自动扫描到 $($archFiles.Count) 个记忆档案" } else { '未找到 → 云记忆注入将跳过（脚本会自动重扫）' })"
 Write-Host "  提示词   : $SourcePrompt"
 Write-Host "  技能库   : $(if ($NoSkills) { '已禁用 (-NoSkills)' } elseif (Test-Path -LiteralPath $skillsSourceDir) { $skillsSourceDir } else { "找不到 $skillsSourceDir → 跳过" })"
@@ -273,9 +312,10 @@ if (-not $InstallRoot -and -not (Test-Path -LiteralPath $ConfigDir)) {
     Write-Host "  [警告] 未检测到 WorkBuddy 安装或其数据目录 —— 目标机器可能没装 WorkBuddy，注入将无效" -ForegroundColor Yellow
 }
 
-$proc = Get-Process WorkBuddyAI -ErrorAction SilentlyContinue
-if ($proc) { Write-Host "  [注意] WorkBuddyAI 正在运行（$($proc.Count) 个进程），写入后需重启才生效" -ForegroundColor Yellow }
-Write-Log ("解析结果 InstallRoot={0} ConfigDir={1} Uid={2} 档案数={3}" -f $InstallRoot, $ConfigDir, $Uid, $archFiles.Count)
+$procName = if ($ProductName) { $ProductName } else { 'WorkBuddyAI' }
+$proc = Get-Process -Name $procName -ErrorAction SilentlyContinue
+if ($proc) { Write-Host "  [注意] $procName 正在运行（$($proc.Count) 个进程），写入后需重启才生效" -ForegroundColor Yellow }
+Write-Log ("解析结果 InstallRoot={0} ConfigDir={1} ProductName={2} Uid={3} 档案数={4}" -f $InstallRoot, $ConfigDir, $ProductName, $Uid, $archFiles.Count)
 
 function Set-SkillOverrides([string]$path, [string[]]$keys, [bool]$remove) {
     if (-not (Test-Path -LiteralPath $path)) { return }
@@ -346,6 +386,18 @@ if ($Status) {
         Write-Host "  档案只读锁          : $((Get-Item -LiteralPath $af).IsReadOnly)   (True = 已挡住程序回写)"
     }
     Write-Host "  注入状态文件        : $(if (Test-Path -LiteralPath $stateFile) { '存在（守护会重注入）' } else { '不存在（守护不工作）' })"
+    $stStatus = $null
+    if (Test-Path -LiteralPath $stateFile) { try { $stStatus = Read-Utf8 $stateFile | ConvertFrom-Json } catch { } }
+    if ($stStatus) {
+        Write-Host "  注入方式            : $(if ($stStatus.method) { $stStatus.method } else { 'memory（旧状态）' })"
+        $bundleFiles = @()
+        if ($stStatus.bundles) { $bundleFiles = @($stStatus.bundles) }
+        foreach ($bf in $bundleFiles) {
+            $bInjected = 0
+            if (Test-Path -LiteralPath $bf) { $bInjected = ([regex]::Matches(([System.IO.File]::ReadAllText($bf)), [regex]::Escape('let __p=__fs.readFileSync('))).Count }
+            Write-Host "  bundle $([System.IO.Path]::GetFileName($bf)) : 注入点=$bInjected 备份=$(Test-Path -LiteralPath "$bf.bak")"
+        }
+    }
     $cfg = if (Test-Path -LiteralPath $cfgFile) { Read-Utf8 $cfgFile | ConvertFrom-Json } else { $null }
     Write-Host "  generateMemoryEnabled: $(if ($cfg) { $cfg.generateMemoryEnabled } else { '-' })   (必须是 True 否则整条链路 skip)"
     Write-Host "  localMemoryEnabled  : $(if ($cfg) { $cfg.localMemoryEnabled } else { '-' })"
@@ -367,11 +419,14 @@ if ($Uninstall -or $RestoreMemory) {
     # 目标档案 = 本次扫描到的 + 状态文件里记录过的（换账号/换机器后仍能清干净）
     $targets = New-Object System.Collections.Generic.List[string]
     foreach ($a in $archFiles) { if ($a) { $targets.Add($a) } }
+    $st = $null
+    $bundleList = @()
     if (Test-Path -LiteralPath $stateFile) {
         try {
             $st = Read-Utf8 $stateFile | ConvertFrom-Json
             foreach ($a in @($st.archives)) { if ($a -and -not $targets.Contains($a)) { $targets.Add($a) } }
             if ($st.archive -and -not $targets.Contains($st.archive)) { $targets.Add($st.archive) }
+            if ($st.bundles) { $bundleList = @($st.bundles) }
         } catch { }
     }
     # 卸载全程只读一次提示词原文：判「档案 / MEMORY.md 里是不是本工具的提示词」要用它。
@@ -403,6 +458,28 @@ if ($Uninstall -or $RestoreMemory) {
         }
     }
     if ($targets.Count -eq 0) { $done += '云记忆档案未执行（该账号还没有档案文件）' }
+
+    # bundle 注入还原：按状态文件登记的 bundle 路径，用 .bak 还原；无备份则提示（可能升级后被替换）。
+    if ($bundleList.Count -gt 0) {
+        foreach ($bp in $bundleList) {
+            if (-not $bp) { continue }
+            $bak = "$bp.bak"
+            if (Test-Path -LiteralPath $bak) {
+                Copy-Item -LiteralPath $bak -Destination $bp -Force
+                $anyRestore = $true
+                $done += "bundle 已从备份还原: $(Split-Path -Leaf $bp)"
+            } else {
+                $done += "bundle 无备份，跳过（可能升级后被替换）: $(Split-Path -Leaf $bp)"
+            }
+        }
+    }
+    # 本工具写入的人格文件（发送层注入用它），名字固定，删掉即可
+    $personaDefault = Join-Path $ConfigDir '.seagull-persona.md'
+    if (Test-Path -LiteralPath $personaDefault) {
+        Remove-Item -LiteralPath $personaDefault -Force -ErrorAction SilentlyContinue
+        $done += 'bundle 人格文件已删除'
+    }
+
     if (Test-Path -LiteralPath $stateFile) { Remove-Item -LiteralPath $stateFile -Force; $done += '注入状态文件已删除（守护停止重注入）' }
 
     if (Test-Path -LiteralPath $fileMemBak) {
@@ -481,90 +558,270 @@ if ($Uninstall -or $RestoreMemory) {
     return
 }
 
+# ---------- bundle 注入（发送层拦截，长提示词专用） ----------
+# 长提示词会超出 WorkBuddy 记忆载体 10000 字符上限被截断，因此 >10000 时改打
+# app.asar.unpacked 的发送 bundle：在 chat/completions 与 responses 请求体上把
+# system 内容整段替换成人格文件。人格文件由本脚本写入 ConfigDir\.seagull-persona.md，
+# 注入代码每次发送时 readFileSync 现读，天然绕过记忆截断。
+$script:WBInjectionMarker = 'let __p=__fs.readFileSync('
+$script:WBPersonaPathRegex = [regex]'let __p=__fs\.readFileSync\("(?<path>[^"\r\n]*)"'
+# 锚点里请求体参数名是压缩后的变量名，必须用命名分组捕获后回填，不能硬编码
+$script:WBChatAnchorRegex = [regex]'create\((?<a>[A-Za-z_$][A-Za-z0-9_$]*),(?<b>[A-Za-z_$][A-Za-z0-9_$]*)\)\{return this\._client\.post\("/chat/completions",\{body:\k<a>,\.\.\.\k<b>,stream:\k<a>\.stream\?\?!1\}\)'
+$script:WBResponsesAnchorRegex = [regex]'create\((?<a>[A-Za-z_$][A-Za-z0-9_$]*),(?<b>[A-Za-z_$][A-Za-z0-9_$]*)\)\{return this\._client\.post\("/responses",\{body:\k<a>,\.\.\.\k<b>,stream:\k<a>\.stream\?\?!1\}\)'
+# 同步取 fs：CJS / ESM / 任意作用域通吃
+$script:WBFsBootstrap = 'let __fs=null;try{if(typeof process!=="undefined"&&typeof process.getBuiltinModule==="function")__fs=process.getBuiltinModule("fs")}catch(x){}if(!__fs){try{__fs=require("fs")}catch(x){}}if(!__fs&&typeof process!=="undefined"&&process.mainModule){try{__fs=process.mainModule.require("fs")}catch(x){}}'
+# @A@ = 请求体参数名，@P@ = 人格文件路径（正斜杠，已转义）
+$script:WBChatInjectTemplate = 'try{' + $script:WBFsBootstrap + 'if(__fs&&@A@&&Array.isArray(@A@.messages)&&@A@.messages.length>0){let __p=__fs.readFileSync("@P@","utf8");if(__p&&__p.trim()){let __done=false;for(let __m of @A@.messages){if(__m&&__m.role==="system"){__m.content=__p.trim();__done=true;break}}if(!__done)@A@.messages.unshift({role:"system",content:__p.trim()})}}}catch(__e){}'
+$script:WBResponsesInjectTemplate = 'try{' + $script:WBFsBootstrap + 'if(__fs&&@A@&&typeof @A@==="object"){try{let __p=__fs.readFileSync("@P@","utf8");if(__p&&__p.trim()){if(typeof @A@.instructions==="string"){@A@.instructions=__p.trim()}else if(Array.isArray(@A@.input)){let __done=false;for(let __m of @A@.input){if(__m&&__m.role==="system"){__m.content=[{type:"input_text",text:__p.trim()}];__done=true;break}}if(!__done)@A@.input.unshift({role:"system",content:[{type:"input_text",text:__p.trim()}]})}}}catch(x2){}}}catch(__e){}'
+
+function ConvertTo-WBJsStringBody {
+    param([Parameter(Mandatory)][string]$Path)
+    $value = $Path.Replace('\', '/')
+    $value = $value.Replace('"', '\"')
+    $value = $value.Replace("`r", '').Replace("`n", '')
+    return $value
+}
+function New-WBChatInjection {
+    param([Parameter(Mandatory)][string]$BodyVar, [Parameter(Mandatory)][string]$PromptJs)
+    return $script:WBChatInjectTemplate.Replace('@A@', $BodyVar).Replace('@P@', $PromptJs)
+}
+function New-WBResponsesInjection {
+    param([Parameter(Mandatory)][string]$BodyVar, [Parameter(Mandatory)][string]$PromptJs)
+    return $script:WBResponsesInjectTemplate.Replace('@A@', $BodyVar).Replace('@P@', $PromptJs)
+}
+function Get-WBCliDistDir {
+    param([Parameter(Mandatory)][string]$WBRoot)
+    return (Join-Path $WBRoot 'resources\app.asar.unpacked\cli\dist')
+}
+function Get-WBScanFiles {
+    param([Parameter(Mandatory)][string]$WBRoot)
+    $dist = Get-WBCliDistDir -WBRoot $WBRoot
+    if (-not (Test-Path -LiteralPath $dist)) { return @() }
+    $files = @()
+    $files += Get-ChildItem -LiteralPath $dist -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.js', '.mjs') -and $_.Name -notlike '*.bak' -and $_.Name -like 'codebuddy*' }
+    foreach ($chunkDir in @(Get-ChildItem -LiteralPath $dist -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'lazy-*' })) {
+        $files += Get-ChildItem -LiteralPath $chunkDir.FullName -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in @('.js', '.mjs') -and $_.Name -notlike '*.bak' }
+    }
+    return @($files | Sort-Object FullName -Unique)
+}
+function Get-WBBundles {
+    param([Parameter(Mandatory)][string]$WBRoot)
+    $dist = Get-WBCliDistDir -WBRoot $WBRoot
+    $markerEscaped = [regex]::Escape($script:WBInjectionMarker)
+    $bundles = @()
+    foreach ($file in Get-WBScanFiles -WBRoot $WBRoot) {
+        $content = [System.IO.File]::ReadAllText($file.FullName)
+        $injected = ([regex]::Matches($content, $markerEscaped)).Count
+        $anchors = $script:WBChatAnchorRegex.Matches($content).Count + $script:WBResponsesAnchorRegex.Matches($content).Count
+        if ($injected -eq 0 -and $anchors -eq 0) { continue }
+        $relName = $file.FullName
+        if ($relName.StartsWith($dist, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relName = $relName.Substring($dist.Length).TrimStart('\', '/')
+        }
+        $bundles += [pscustomobject]@{
+            Name     = $file.Name
+            RelName  = $relName
+            Path     = $file.FullName
+            Backup   = $file.FullName + '.bak'
+            Injected = $injected
+            Anchors  = $anchors
+        }
+    }
+    return @($bundles)
+}
+function Get-WBBundlePatchedContent {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Content,
+        [Parameter(Mandatory)][string]$PromptJs,
+        [switch]$InjectAnchors
+    )
+    $chatRx = $script:WBChatAnchorRegex
+    $responsesRx = $script:WBResponsesAnchorRegex
+    $markerEscaped = [regex]::Escape($script:WBInjectionMarker)
+    $chatMatches = $chatRx.Matches($Content)
+    $responsesMatches = $responsesRx.Matches($Content)
+    $injectedBefore = ([regex]::Matches($Content, $markerEscaped)).Count
+    # 已部署过则只迁移人格文件路径（换人格后重跑走这里）
+    $newContent = [regex]::Replace($Content, $script:WBPersonaPathRegex, ('let __p=__fs.readFileSync("' + $PromptJs + '"'))
+    if ($InjectAnchors) {
+        $newContent = $chatRx.Replace($newContent, [System.Text.RegularExpressions.MatchEvaluator] {
+                param($match)
+                $bodyVar = $match.Groups['a'].Value
+                $optVar = $match.Groups['b'].Value
+                $injection = New-WBChatInjection -BodyVar $bodyVar -PromptJs $PromptJs
+                return 'create(' + $bodyVar + ',' + $optVar + '){' + $injection +
+                    'return this._client.post("/chat/completions",{body:' + $bodyVar + ',...' + $optVar + ',stream:' + $bodyVar + '.stream??!1})'
+            })
+        $newContent = $responsesRx.Replace($newContent, [System.Text.RegularExpressions.MatchEvaluator] {
+                param($match)
+                $bodyVar = $match.Groups['a'].Value
+                $optVar = $match.Groups['b'].Value
+                $injection = New-WBResponsesInjection -BodyVar $bodyVar -PromptJs $PromptJs
+                return 'create(' + $bodyVar + ',' + $optVar + '){' + $injection +
+                    'return this._client.post("/responses",{body:' + $bodyVar + ',...' + $optVar + ',stream:' + $bodyVar + '.stream??!1})'
+            })
+    }
+    $injectedAfter = ([regex]::Matches($newContent, $markerEscaped)).Count
+    return [pscustomobject]@{
+        Content       = $newContent
+        ChatAnchors   = $chatMatches.Count
+        RespAnchors   = $responsesMatches.Count
+        Injected      = $injectedBefore
+        Expected      = $injectedBefore + $chatMatches.Count + $responsesMatches.Count
+        InjectedAfter = $injectedAfter
+        Changed       = ($newContent -cne $Content)
+    }
+}
+
+function Invoke-WBMemoryInjection {
+    # 记忆文件注入（短提示词专用；bundle 不可用时的回退）。修改 $script:steps / $script:archFailed。
+    if ($archFiles.Count -gt 0) {
+        if (-not (Test-Path -LiteralPath $memDir)) { New-Item -ItemType Directory -Path $memDir -Force | Out-Null }
+        foreach ($af in $archFiles) {
+            $afBak = "$af.bak-inject"
+            if ((Test-Path -LiteralPath $af) -and -not (Test-Path -LiteralPath $afBak)) {
+                try {
+                    $oldBlock = (Get-MemoryBlockBody (Read-Utf8 $af)).Trim()
+                    if ($oldBlock -ne $srcText.Trim()) { Copy-Item -LiteralPath $af -Destination $afBak -Force }
+                } catch { Write-Log "读取/备份档案失败(继续): $af" }
+            }
+            Set-ArchiveReadOnly $af $false
+            $uidOfFile = if (Test-Path -LiteralPath $af) { ((Read-Utf8 $af) | Select-String -Pattern '"uid"\s*:\s*"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1) } else { $null }
+            if (-not $uidOfFile) { $uidOfFile = (Split-Path -Leaf $af) -replace '_memory\.md$', '' }
+            $raw = [ordered]@{ uid = $uidOfFile; memoryBlock = $srcText; updatedAt = $now; version = $MEM_VERSION }
+            $md = "# User Memory Profile`n> Last updated: $now`n> Version: $MEM_VERSION`n`n## Memory Block`n`n$srcText`n`n---`n`n<!-- RAW_JSON_START`n" +
+                  ($raw | ConvertTo-Json -Depth 6) + "`nRAW_JSON_END -->`n"
+            $written = $false
+            for ($try = 1; $try -le 3; $try++) {
+                try { Write-Utf8 $af $md; $written = $true; break }
+                catch { Write-Log "档案写入失败(第 $try 次): $af"; Start-Sleep -Milliseconds 800 }
+            }
+            if (-not $written) {
+                $script:archFailed += $af
+                Write-Host "  [失败] 档案被占用，写入失败: $(Split-Path -Leaf $af)" -ForegroundColor Red
+                continue
+            }
+            Set-ArchiveReadOnly $af $true
+        }
+        $script:steps++
+        Write-Host "[$($script:steps)] 云记忆档案已注入 memoryBlock：$($archFiles.Count) 个（$($srcText.Trim().Length) 字符，Version $MEM_VERSION，已设只读）" -ForegroundColor Green
+        foreach ($af in $archFiles) { Write-Host "      - $af" -ForegroundColor DarkGray }
+    } else {
+        Write-Host "  [提示] 云记忆档案未执行：该账号还没有记忆档案文件（WorkBuddy 未登录或从未产生记忆）" -ForegroundColor Yellow
+    }
+
+    if ((Test-Path -LiteralPath $fileMem) -and -not (Test-Path -LiteralPath $fileMemBak) -and (Get-Sha $fileMem) -ne $srcHash) {
+        Copy-Item -LiteralPath $fileMem -Destination $fileMemBak -Force
+    }
+    try { Write-Utf8 $fileMem $srcText }
+    catch { Write-Host "  [提示] MEMORY.md 写入失败（可能被占用），已跳过" -ForegroundColor Yellow; Write-Log "MEMORY.md 写入失败" }
+    $script:steps++
+    Write-Host "[$($script:steps)] MEMORY.md 已写入 $((Get-Item $fileMem).Length) bytes" -ForegroundColor Green
+
+    if (-not (Test-Path -LiteralPath (Split-Path -Parent $cfgFile))) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $cfgFile) -Force | Out-Null
+    }
+    if ((Test-Path -LiteralPath $cfgFile) -and -not (Test-Path -LiteralPath $cfgBak)) {
+        Copy-Item -LiteralPath $cfgFile -Destination $cfgBak -Force
+    }
+    Set-AppConfigFlags $cfgFile @{ generateMemoryEnabled = $true; localMemoryEnabled = $true; disableLocalSkillsMemory = $false }
+    $script:steps++
+    Write-Host "[$($script:steps)] generateMemoryEnabled = true（备份: $cfgBak）" -ForegroundColor Green
+}
+
+function Invoke-WBBundleInjection {
+    # 发送层 bundle 注入（长提示词专用）。返回 $true 表示成功/已最新；$false 表示不可用需回退。
+    $WBRoot = $InstallRoot
+    if (-not $WBRoot) {
+        Write-Host "  [提示] 未找到 WorkBuddy 安装目录，bundle 注入不可用，回退记忆文件注入。" -ForegroundColor Yellow
+        Write-Log "bundle 不可用: 未找到安装目录 (ProductName=$ProductName)"
+        return $false
+    }
+    $bundles = @(Get-WBBundles -WBRoot $WBRoot)
+    if ($bundles.Count -eq 0) {
+        Write-Host "  [提示] 该版本把 cli/dist 打包在 app.asar 内（国际版常见），无 unpacked 锚点可补。" -ForegroundColor Yellow
+        Write-Host "         回退到记忆文件注入；若提示词 >10000 字符会被截断到前 10000 字符。" -ForegroundColor Yellow
+        Write-Log "bundle 不可用: 无 unpacked 锚点 $WBRoot (可能打包在 app.asar)"
+        return $false
+    }
+
+    $pf = Join-Path $ConfigDir '.seagull-persona.md'
+    if (-not (Test-Path -LiteralPath $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null }
+    Write-Utf8 $pf $srcText
+    $script:personaFile = $pf
+    $script:steps++
+    Write-Host "[$($script:steps)] 人格文件已写入 $pf（$($srcText.Length) 字符）" -ForegroundColor Green
+
+    $promptJs = ConvertTo-WBJsStringBody $pf
+    $written = @()
+    foreach ($b in $bundles) {
+        $content = [System.IO.File]::ReadAllText($b.Path)
+        $patch = Get-WBBundlePatchedContent -Content $content -PromptJs $promptJs -InjectAnchors
+        if ($patch.Expected -eq 0) { Write-Host "  [错误] 无锚点: $($b.RelName)" -ForegroundColor Red; Write-Log "bundle 无锚点: $($b.RelName)"; return $false }
+        if ($patch.InjectedAfter -ne $patch.Expected) { Write-Host "  [错误] 注入点不匹配: $($b.RelName)" -ForegroundColor Red; Write-Log "bundle 注入点不匹配: $($b.RelName)"; return $false }
+        if (-not $patch.Changed) {
+            Write-Host "  [跳过] 已是最新: $($b.RelName)" -ForegroundColor Gray
+            $written += $b.Path
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $b.Backup)) { Copy-Item -LiteralPath $b.Path -Destination $b.Backup -Force }
+        [System.IO.File]::WriteAllText($b.Path, $patch.Content, [System.Text.UTF8Encoding]::new($false))
+        $written += $b.Path
+        Write-Host "  [完成] $($b.RelName)（chat=$($patch.ChatAnchors) responses=$($patch.RespAnchors)）" -ForegroundColor Green
+    }
+    $script:writtenBundles = @($written)
+    $script:steps++
+    Write-Host "[$($script:steps)] bundle 注入完成：$($written.Count) 个程序包" -ForegroundColor Green
+    return $true
+}
+
 # ---------- 安装 ----------
 if ($KillApp -and $proc) {
-    Stop-Process -Name WorkBuddyAI -Force -ErrorAction SilentlyContinue
+    Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
-    Write-Host "  已结束 WorkBuddyAI 进程" -ForegroundColor Yellow
+    Write-Host "  已结束 $procName 进程" -ForegroundColor Yellow
 }
 
 $srcText = Read-Utf8 $SourcePrompt
 $srcHash = Get-Sha $SourcePrompt
 $now = Get-NowIso
 $steps = 0
+$archFailed = @()
 
-# WorkBuddy 37.x 记忆载体长度上限（实测 app.asar）：
+# 注入方式判定（WorkBuddy 37.x 记忆载体长度上限，实测 app.asar）：
 #   云记忆 memoryBlock（<memory>）10000 字符；用户级 MEMORY.md（<user_memory>）4000 字符；
 #   工作区 MEMORY.md（<working_memory_content>）10000 字符。
-# 提示词超限会被 WorkBuddy 在读取时静默截断，后半段正文根本进不了对话，表现为「注入成功但没效果」。
-if ($srcText.Length -gt 10000) {
-    Write-Host "  [警告] 提示词 $($srcText.Length) 字符，超过 WorkBuddy 云记忆上限 10000 字符。" -ForegroundColor Yellow
-    Write-Host "         注入成功后也会被截断到前 10000 字符；MEMORY.md 用户记忆上限仅 4000 字符。" -ForegroundColor Yellow
-    Write-Host "         建议把提示词精简到 10000 字符以内再注入，否则破甲效果会明显打折甚至失效。" -ForegroundColor Yellow
-    Write-Log "提示词超长: $($srcText.Length) chars (云记忆上限 10000 / 用户记忆 4000)"
-}
-
-# 1) 账号级云记忆档案（真正被自动注入的全局记忆）
-if ($archFiles.Count -gt 0) {
-    if (-not (Test-Path -LiteralPath $memDir)) { New-Item -ItemType Directory -Path $memDir -Force | Out-Null }
-    $archFailed = @()
-    foreach ($af in $archFiles) {
-        $afBak = "$af.bak-inject"
-        if ((Test-Path -LiteralPath $af) -and -not (Test-Path -LiteralPath $afBak)) {
-            try {
-    $oldBlock = (Get-MemoryBlockBody (Read-Utf8 $af)).Trim()
-                if ($oldBlock -ne $srcText.Trim()) { Copy-Item -LiteralPath $af -Destination $afBak -Force }
-            } catch { Write-Log "读取/备份档案失败(继续): $af" }
-        }
-        Set-ArchiveReadOnly $af $false
-        $uidOfFile = if (Test-Path -LiteralPath $af) { ((Read-Utf8 $af) | Select-String -Pattern '"uid"\s*:\s*"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1) } else { $null }
-        if (-not $uidOfFile) { $uidOfFile = (Split-Path -Leaf $af) -replace '_memory\.md$', '' }
-        $raw = [ordered]@{ uid = $uidOfFile; memoryBlock = $srcText; updatedAt = $now; version = $MEM_VERSION }
-        $md = "# User Memory Profile`n> Last updated: $now`n> Version: $MEM_VERSION`n`n## Memory Block`n`n$srcText`n`n---`n`n<!-- RAW_JSON_START`n" +
-              ($raw | ConvertTo-Json -Depth 6) + "`nRAW_JSON_END -->`n"
-        # 档案可能被运行中的 WorkBuddy 占用（共享冲突）→ 重试 3 次，仍失败只记不中断
-        $written = $false
-        for ($try = 1; $try -le 3; $try++) {
-            try { Write-Utf8 $af $md; $written = $true; break }
-            catch { Write-Log "档案写入失败(第 $try 次): $af"; Start-Sleep -Milliseconds 800 }
-        }
-        if (-not $written) {
-            $archFailed += $af
-            Write-Host "  [失败] 档案被占用，写入失败: $(Split-Path -Leaf $af)" -ForegroundColor Red
-            continue
-        }
-        # 只读锁定：程序写档案走 tmp+rename，Windows 上 rename 覆盖只读文件会 EPERM，从而挡住空档案回写
-        Set-ArchiveReadOnly $af $true
-    }
-    $steps++
-    Write-Host "[$steps] 云记忆档案已注入 memoryBlock：$($archFiles.Count) 个（$($srcText.Trim().Length) 字符，Version $MEM_VERSION，已设只读）" -ForegroundColor Green
-    foreach ($af in $archFiles) { Write-Host "      - $af" -ForegroundColor DarkGray }
+# 提示词 <=10000 -> 走记忆文件注入；>10000 -> 走 bundle 注入（发送层拦截，绕过截断）。
+$useBundle = ($srcText.Length -gt 10000)
+if ($useBundle) {
+    Write-Host "  [判定] 提示词 $($srcText.Length) 字符 > 10000，改用 bundle 注入（发送层拦截，不经过记忆截断）" -ForegroundColor Yellow
+    Write-Log "提示词超长: $($srcText.Length) chars -> bundle 注入"
 } else {
-    Write-Host "[1] 云记忆档案未执行：该账号还没有记忆档案文件（WorkBuddy 未登录或从未产生记忆）" -ForegroundColor Yellow
-    Write-Host "      处理：先在 WorkBuddy 里发一句话再重跑本脚本；或安装后由 fj_tool 守护自动补注入" -ForegroundColor DarkGray
+    Write-Host "  [判定] 提示词 $($srcText.Length) 字符 <= 10000，走记忆文件注入" -ForegroundColor DarkGray
 }
 
-# 2) 用户级文件记忆（AI 主动读取的兜底）
-if ((Test-Path -LiteralPath $fileMem) -and -not (Test-Path -LiteralPath $fileMemBak) -and (Get-Sha $fileMem) -ne $srcHash) {
-    Copy-Item -LiteralPath $fileMem -Destination $fileMemBak -Force
+# 执行注入：短提示词 -> 记忆文件；长提示词 -> bundle（不可用时回退记忆文件）。
+$script:personaFile = ''
+$script:writtenBundles = @()
+$personaFile = ''
+$writtenBundles = @()
+if ($useBundle) {
+    $bundleOk = Invoke-WBBundleInjection
+    if (-not $bundleOk) {
+        $useBundle = $false
+        Write-Host "  [回退] 改为记忆文件注入（长提示词会按 10000 字符上限截断）。" -ForegroundColor Yellow
+        Invoke-WBMemoryInjection
+    }
+} else {
+    Invoke-WBMemoryInjection
 }
-try { Write-Utf8 $fileMem $srcText }
-catch { Write-Host "  [提示] MEMORY.md 写入失败（可能被占用），已跳过" -ForegroundColor Yellow; Write-Log "MEMORY.md 写入失败" }
-$steps++
-Write-Host "[$steps] MEMORY.md 已写入 $((Get-Item $fileMem).Length) bytes" -ForegroundColor Green
+$personaFile = $script:personaFile
+$writtenBundles = @($script:writtenBundles)
 
-# 3) 记忆总闸
-if (-not (Test-Path -LiteralPath (Split-Path -Parent $cfgFile))) {
-    New-Item -ItemType Directory -Path (Split-Path -Parent $cfgFile) -Force | Out-Null
-}
-if ((Test-Path -LiteralPath $cfgFile) -and -not (Test-Path -LiteralPath $cfgBak)) {
-    Copy-Item -LiteralPath $cfgFile -Destination $cfgBak -Force
-}
-Set-AppConfigFlags $cfgFile @{ generateMemoryEnabled = $true; localMemoryEnabled = $true; disableLocalSkillsMemory = $false }
-$steps++
-Write-Host "[$steps] generateMemoryEnabled = true（备份: $cfgBak）" -ForegroundColor Green
-
-# 4) Skills
+# 5) Skills（两种模式共用）
 $installedNames = @()
 if ($NoSkills) {
     Write-Host "[$steps] skills 未执行（-NoSkills）" -ForegroundColor DarkGray
@@ -572,7 +829,6 @@ if ($NoSkills) {
     Write-Host "[$steps] skills 未执行（找不到 $skillsSourceDir）" -ForegroundColor Yellow
 } else {
     New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null
-    # 上一次安装清单里记过哪些技能（新版装完按它清理旧版遗留）
     $prevSkills = @()
     if (Test-Path -LiteralPath $manifestFile) {
         try {
@@ -583,8 +839,6 @@ if ($NoSkills) {
     $manifest = [ordered]@{ source = $SkillsSource; installedAt = $now; prompt = (Split-Path -Leaf $SourcePrompt); skills = [ordered]@{}; backups = [ordered]@{} }
     foreach ($name in Get-SkillNames $skillsSourceDir) {
         $s = Join-Path $skillsSourceDir $name; $d = Join-Path $skillsDir $name
-        # 目标已有同名技能、且不在上次的安装清单里 = 用户自己的技能：
-        # 整目录挪到 <名>.bak-<时间戳>，卸载时再搬回来（否则 SKILL.md 会被静默覆盖）。
         if ((Test-Path -LiteralPath $d) -and ($prevSkills -notcontains $name)) {
             $bak = Join-Path $skillsDir ($name + '.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
             Move-Item -LiteralPath $d -Destination $bak -Force
@@ -597,52 +851,68 @@ if ($NoSkills) {
     }
     Write-Utf8 $manifestFile (($manifest | ConvertTo-Json -Depth 6) + "`n")
     $installedNames = @($manifest.skills.Keys)
-    # 清掉上一版遗留、新版技能库里已移除的技能
     $staleSkills = Prune-StaleSkills $skillsDir $prevSkills $installedNames
     if ($staleSkills.Count -gt 0) {
         Write-Host "[$steps] 已清理旧版遗留 skills $($staleSkills.Count) 个" -ForegroundColor DarkGray
     }
-    # 清掉可能把这些技能禁用的 override（settings.json 的 skillOverrides：无 key = 启用）
     Set-SkillOverrides $settingsFile $installedNames $true
     $steps++
     Write-Host "[$steps] skills 已装 $($installedNames.Count) 个 → $skillsDir" -ForegroundColor Green
 }
 
-# 5) 注入状态文件（fj_tool 守护线程据此自动重注入）
+# 6) 注入状态文件（fj_tool 守护线程据此自动重注入）
 $state = [ordered]@{
     prompt       = (Split-Path -Leaf $SourcePrompt)
     promptSha256 = $srcHash
     configDir    = $ConfigDir
+    productName  = $ProductName
+    installRoot  = $InstallRoot
+    method       = $(if ($useBundle) { 'bundle' } else { 'memory' })
     uid          = $Uid
     memoryDir    = $memDir
     archives     = $archFiles
     archive      = $(if ($archFiles.Count -gt 0) { $archFiles[0] } else { '' })
     memoryFile   = $fileMem
     appConfig    = $cfgFile
+    personaFile  = $personaFile
+    bundles      = @($writtenBundles)
     version      = $MEM_VERSION
     skills       = $installedNames
     installedAt  = $now
 }
 Write-Utf8 $stateFile (($state | ConvertTo-Json -Depth 6) + "`n")
 $steps++
-Write-Host "[$steps] 注入状态已记录 → $stateFile" -ForegroundColor Green
+Write-Host "[$steps] 注入状态已记录 → $stateFile（方式：$(if ($useBundle) { 'bundle' } else { 'memory' })）" -ForegroundColor Green
 
 # ---------- 校验 ----------
 Write-Host "`n[校验]" -ForegroundColor Cyan
 $ok = $true
-foreach ($af in @($archFiles | Where-Object { Test-Path -LiteralPath $_ })) {
-    $t = Read-Utf8 $af
-    $blockOk = (Get-MemoryBlockBody $t).Trim() -eq $srcText.Trim()
-    $rawOk = $t -match '"memoryBlock"'
-    Write-Host "  档案 memoryBlock 可解析 : $blockOk  ($(Split-Path -Leaf $af))"
-    Write-Host "  档案 RAW_JSON 存在      : $rawOk"
-    if (-not ($blockOk -and $rawOk)) { $ok = $false }
+if ($useBundle) {
+    $personaOk = (Test-Path -LiteralPath $personaFile) -and ((Get-Sha $personaFile) -eq $srcHash)
+    Write-Host "  人格文件落盘且哈希一致 : $personaOk  ($personaFile)"
+    if (-not $personaOk) { $ok = $false }
+    foreach ($bp in $writtenBundles) {
+        $bText = [System.IO.File]::ReadAllText($bp)
+        $bOk = $bText.Contains($script:WBInjectionMarker)
+        Write-Host "  bundle 含注入标记      : $bOk  ($(Split-Path -Leaf $bp))"
+        if (-not $bOk) { $ok = $false }
+    }
+    if ($installedNames.Count -gt 0) { Write-Host "  skills 落盘             : $((Get-SkillNames $skillsDir).Count) 个" }
+} else {
+    foreach ($af in @($archFiles | Where-Object { Test-Path -LiteralPath $_ })) {
+        $t = Read-Utf8 $af
+        $blockOk = (Get-MemoryBlockBody $t).Trim() -eq $srcText.Trim()
+        $rawOk = $t -match '"memoryBlock"'
+        Write-Host "  档案 memoryBlock 可解析 : $blockOk  ($(Split-Path -Leaf $af))"
+        Write-Host "  档案 RAW_JSON 存在      : $rawOk"
+        if (-not ($blockOk -and $rawOk)) { $ok = $false }
+    }
+    $c = Read-Utf8 $cfgFile | ConvertFrom-Json
+    Write-Host "  generateMemoryEnabled   : $($c.generateMemoryEnabled)"
+    if ($c.generateMemoryEnabled -ne $true) { $ok = $false }
+    Write-Host "  MEMORY.md 哈希一致      : $((Get-Sha $fileMem) -eq $srcHash)"
+    if ($installedNames.Count -gt 0) { Write-Host "  skills 落盘             : $((Get-SkillNames $skillsDir).Count) 个" }
 }
-$c = Read-Utf8 $cfgFile | ConvertFrom-Json
-Write-Host "  generateMemoryEnabled   : $($c.generateMemoryEnabled)"
-if ($c.generateMemoryEnabled -ne $true) { $ok = $false }
-Write-Host "  MEMORY.md 哈希一致      : $((Get-Sha $fileMem) -eq $srcHash)"
-if ($installedNames.Count -gt 0) { Write-Host "  skills 落盘             : $((Get-SkillNames $skillsDir).Count) 个" }
 
 if ($ok -and $archFailed.Count -gt 0) {
     Write-Log "部分完成: 档案写入失败 $($archFailed.Count) 个"
@@ -653,17 +923,23 @@ if ($ok -and $archFailed.Count -gt 0) {
     exit 2
 }
 if ($ok) {
-    Write-Log "完成: 校验全部通过"
+    Write-Log ("完成: 校验全部通过 (method={0})" -f $(if ($useBundle) { 'bundle' } else { 'memory' }))
     Write-Host "`n[完成] WorkBuddy 破甲注入成功" -ForegroundColor Green
-    if ($proc -and -not $KillApp) { Write-Host "  下一步：完全退出 WorkBuddyAI（托盘右键退出）后重新启动" -ForegroundColor Yellow }
+    if ($useBundle) {
+        Write-Host "  本次方式：bundle 注入（发送层拦截，不受 10000 字符记忆上限影响）" -ForegroundColor Green
+        Write-Host "  注意：WorkBuddy 升级会覆盖被打补丁的程序包，升级后需重新注入一次。" -ForegroundColor Yellow
+        Write-Host "  生效：完全退出 $procName（托盘右键退出）后重新启动，再发一句话验证。" -ForegroundColor Yellow
+    } else {
+        if ($proc -and -not $KillApp) { Write-Host "  下一步：完全退出 $procName（托盘右键退出）后重新启动" -ForegroundColor Yellow }
+        Write-Host "  生效验证：发一句话后看日志 memory_injection_success" -ForegroundColor DarkGray
+    }
     if ($Restart) {
-        $exe = if ($InstallRoot) { Join-Path $InstallRoot 'WorkBuddyAI.exe' } else { '' }
+        $exe = if ($InstallRoot -and $ProductName) { Join-Path $InstallRoot "$ProductName.exe" } elseif ($InstallRoot) { Join-Path $InstallRoot 'WorkBuddyAI.exe' } else { '' }
         if ($exe -and (Test-Path -LiteralPath $exe)) {
             Start-Process -FilePath $exe | Out-Null
-            Write-Host "  已重新拉起 WorkBuddyAI" -ForegroundColor Green
-        } else { Write-Host "  未执行：未找到 WorkBuddyAI.exe，请手动启动" -ForegroundColor Yellow }
+            Write-Host "  已重新拉起 $procName" -ForegroundColor Green
+        } else { Write-Host "  未执行：未找到 $procName 主程序，请手动启动" -ForegroundColor Yellow }
     }
-    Write-Host "  生效验证：发一句话后看日志 memory_injection_success" -ForegroundColor DarkGray
     Write-Host "  还原命令：.\install-workbuddy.ps1 -Uninstall" -ForegroundColor DarkGray
 } else {
     Write-Log "中断: 校验未通过（见上方失败项）"
