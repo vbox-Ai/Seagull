@@ -1,6 +1,6 @@
 {
   "name": "seagull-v8",
-  "version": "4.5.5",
+  "version": "4.5.6",
   "private": true,
   "description": "海鸥V8·破甲版 · 桌面版",
   "main": "electron/main.cjs",
