@@ -102,23 +102,25 @@ export function Wizard({
               提示词库为空，请先点「去管理」导入提示词。
             </div>
           ) : (
-            prompts.map((p) => (
-              <div key={p.name} className="sg-engine-row">
-                <label>
-                  <div className="sg-engine-name">
-                    {p.name}
-                    {p.current ? "（当前）" : ""}
-                  </div>
-                  <div className="sg-engine-desc">{p.chars} 字</div>
-                </label>
-                <input
-                  type="radio"
-                  name="prompt"
-                  checked={selectedPrompt === p.name}
-                  onChange={() => onSelectPrompt(p.name)}
-                />
-              </div>
-            ))
+            <div style={{ maxHeight: 320, overflow: "auto" }}>
+              {prompts.map((p) => (
+                <div key={p.name} className="sg-engine-row">
+                  <label>
+                    <div className="sg-engine-name">
+                      {p.name}
+                      {p.current ? "（当前）" : ""}
+                    </div>
+                    <div className="sg-engine-desc">{p.chars} 字</div>
+                  </label>
+                  <input
+                    type="radio"
+                    name="prompt"
+                    checked={selectedPrompt === p.name}
+                    onChange={() => onSelectPrompt(p.name)}
+                  />
+                </div>
+              ))}
+            </div>
           )}
           <div className="sg-wizard-actions">
             <button type="button" className="btn btn-ghost" onClick={prev}>
@@ -142,6 +144,9 @@ export function Wizard({
       {step === 2 && (
         <div className="sg-wizard-card">
           <h2 className="sg-wizard-title">选择引擎</h2>
+          <p className="app-prose">
+            引擎是可选的：只注入提示词也行，逆向工具链等需要时再去 Seep 工作台装。
+          </p>
           <div className="sg-engine-row">
             <label>
               <div className="sg-engine-name">Seep 逆向工作台（离线）</div>
@@ -160,6 +165,9 @@ export function Wizard({
             </label>
             <input type="checkbox" checked={useRea} onChange={(e) => setUseRea(e.target.checked)} />
           </div>
+          {!useSeep && !useRea && (
+            <div className="sg-hint">未选引擎：将只注入提示词，不部署任何逆向工具链。</div>
+          )}
           {reaProgress && (
             <div className="sg-engine-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
               <div className="sg-engine-desc">{reaProgress.label}</div>
@@ -172,7 +180,7 @@ export function Wizard({
             <button type="button" className="btn btn-ghost" onClick={prev}>
               上一步
             </button>
-            <button type="button" className="btn btn-primary" disabled={!useSeep && !useRea} onClick={next}>
+            <button type="button" className="btn btn-primary" onClick={next}>
               下一步
             </button>
           </div>
@@ -182,10 +190,15 @@ export function Wizard({
       {step === 3 && (
         <div className="sg-wizard-card">
           <h2 className="sg-wizard-title">执行注入</h2>
-          <p className="app-prose">
-            目标 {target.nav} · 提示词 {selectedPrompt || "（未选）"} · 引擎{" "}
-            {[useSeep && "Seep", useRea && "REA"].filter(Boolean).join(" + ") || "（未选）"}
-          </p>
+          <div className="sg-engine-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+            <div className="sg-summary-line">
+              <span className="badge badge-neutral">{target.nav}</span>
+              <span className="badge badge-success">{selectedPrompt || "（未选）"}</span>
+              <span className="badge badge-warning">
+                {[useSeep && "Seep", useRea && "REA"].filter(Boolean).join(" + ") || "仅提示词"}
+              </span>
+            </div>
+          </div>
           <div className="sg-wizard-actions">
             <button type="button" className="btn btn-ghost" onClick={prev} disabled={busy}>
               上一步

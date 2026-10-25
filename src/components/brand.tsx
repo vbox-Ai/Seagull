@@ -177,8 +177,22 @@ export const BRAND_ICONS: Record<string, (p: BrandProps) => ReactElement> = {
   tutorial: BrandSeagull,
 };
 
+/** 各品牌主色：让首页/向导图标用官方识别色，而不是统一的 currentColor。 */
+export const BRAND_COLORS: Record<string, string> = {
+  codex: "#10a37f",
+  zcode: "#7c3aed",
+  cursor: "#7d5fff",
+  opencode: "#0ea5e9",
+  claude: "#d97757",
+  workbuddy: "#16a34a",
+  "workbuddy-cn": "#ef4444",
+  dsh: "#4d6bfe",
+  doubao: "#4e8ef7",
+  tutorial: "#0ea5e9",
+};
+
 /** 按键取品牌图标；未知键回退海鸥翼。 */
-export function BrandIcon({ id, ...rest }: BrandProps & { id: string }) {
+export function BrandIcon({ id, color, ...rest }: BrandProps & { id: string; color?: string }) {
   const C = BRAND_ICONS[id] || BrandSeagull;
-  return <C {...rest} />;
+  return <C color={color || BRAND_COLORS[id] || "currentColor"} {...rest} />;
 }

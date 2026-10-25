@@ -76,7 +76,7 @@ export const TARGETS: Target[] = [
   {
     id: "workbuddy",
     icon: "workbuddy",
-    nav: "WorkBuddy 破甲",
+    nav: "WorkBuddy 国际版",
     eyebrow: "WORKBUDDY 破甲（国际版）",
     title: "WorkBuddy 破甲（国际版）",
     desc: TARGET_DESC,

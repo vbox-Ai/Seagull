@@ -155,25 +155,27 @@ export function ProfilePage({ version, status, level, theme, onToggleTheme, onOp
         {prompts.length === 0 ? (
           <p className="settings-card-description">提示词库为空。</p>
         ) : (
-          prompts.map((p) => (
-            <div key={p.name} className="settings-row">
-              <span className="settings-row-copy">
-                <div className="settings-row-title">
-                  {p.name}
-                  {p.current ? "（当前）" : ""}
-                </div>
-                <div className="settings-row-desc">{p.chars} 字</div>
-              </span>
-              <span className="settings-row-control app-inline-actions" style={{ marginTop: 0 }}>
-                <button type="button" className="btn btn-secondary" disabled={p.current} onClick={() => selectPrompt(p.name)}>
-                  设为当前
-                </button>
-                <button type="button" className="btn btn-ghost" disabled={p.current} onClick={() => deletePrompt(p.name)}>
-                  删除
-                </button>
-              </span>
-            </div>
-          ))
+          <div className="settings-panel" style={{ maxHeight: 320, overflow: "auto" }}>
+            {prompts.map((p) => (
+              <div key={p.name} className="settings-row">
+                <span className="settings-row-copy">
+                  <div className="settings-row-title">
+                    {p.name}
+                    {p.current ? "（当前）" : ""}
+                  </div>
+                  <div className="settings-row-desc">{p.chars} 字</div>
+                </span>
+                <span className="settings-row-control app-inline-actions" style={{ marginTop: 0 }}>
+                  <button type="button" className="btn btn-secondary" disabled={p.current} onClick={() => selectPrompt(p.name)}>
+                    设为当前
+                  </button>
+                  <button type="button" className="btn btn-ghost" disabled={p.current} onClick={() => deletePrompt(p.name)}>
+                    删除
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

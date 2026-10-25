@@ -163,6 +163,18 @@ function seepScript(name) {
 */
 function memoryPrompt() {
   const dir = p(MEMORY_DIR);
+  // 用户在「提示词管理」里点过「设为当前」：优先用它，而不是按文件名排序取第一个
+  try {
+    const active = loadState().activePrompt;
+    if (active) {
+      const full = path.join(dir, active);
+      const text = fs.readFileSync(full, "utf8");
+      const chars = text.trim().length;
+      if (chars > 0) return { path: full, name: active, chars };
+    }
+  } catch {
+    /* 没选过 / 文件已删，落到默认 */
+  }
   let names = [];
   try {
     names = fs
@@ -982,7 +994,9 @@ function fixDeps() {
     const text = `随包缺少依赖修复脚本：${script}`;
     return Promise.resolve({ ok: false, code: -1, timedOut: false, out: text, error: text });
   }
-  return runPowerShell(["-File", script, "-NonInteractive"], "修复逆向工具链", SEEP_TIMEOUT);
+  // repair-tools.ps1 只声明了 -Only / -Force，没有 -NonInteractive；之前传它导致
+  // NamedParameterNotFound。直接 -Force 全量修复即可。
+  return runPowerShell(["-File", script, "-Force"], "修复逆向工具链", SEEP_TIMEOUT);
 }
 
 // ---------- 功能4：引擎管理（双引擎） ----------

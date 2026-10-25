@@ -623,3 +623,12 @@
   color: var(--ds-text-secondary);
   line-height: var(--leading-prose);
 }
+
+/* 执行注入页：目标 / 提示词 / 引擎 徽标摘要行 */
+.sg-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0 10px;
+}
