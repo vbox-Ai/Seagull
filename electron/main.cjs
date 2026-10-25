@@ -1282,6 +1282,14 @@ async function doRestore(targetId) {
     return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed: installedSnapshot().installed };
   }
   const res = await runPowerShell(restoreMemoryArgs(targetId), `装回 ${targetId} 原始记忆`, UNINSTALL_TIMEOUT);
+  if (res.ok) {
+    // 装回原始记忆 = 注入的提示词已还原，首页卡片不能再显示「已注入 / 绿灯」。
+    // 之前这里漏了清理，导致所有平台还原后状态灯都不灭。
+    const st = loadState();
+    delete st.installed[targetId];
+    saveState({ installed: st.installed });
+    setInstalledMeta(targetId, null);
+  }
   appendHistory({ action: "restore", target: targetId, prompt: "", ok: res.ok, detail: res.error || "" });
   return { ...res, installed: installedSnapshot().installed };
 }

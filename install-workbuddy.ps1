@@ -349,6 +349,7 @@ if ($Status) {
     $cfg = if (Test-Path -LiteralPath $cfgFile) { Read-Utf8 $cfgFile | ConvertFrom-Json } else { $null }
     Write-Host "  generateMemoryEnabled: $(if ($cfg) { $cfg.generateMemoryEnabled } else { '-' })   (必须是 True 否则整条链路 skip)"
     Write-Host "  localMemoryEnabled  : $(if ($cfg) { $cfg.localMemoryEnabled } else { '-' })"
+    Write-Host "  disableLocalSkillsMemory: $(if ($cfg) { $cfg.disableLocalSkillsMemory } else { '-' })   (必须是 False 否则 MEMORY.md 不注入)"
     Write-Host "  MEMORY.md           : $(if (Test-Path -LiteralPath $fileMem) { "$((Get-Item $fileMem).Length) bytes / 与提示词一致=$((Get-Sha $fileMem) -eq $srcHash)" } else { '不存在' })"
     $names = Get-SkillNames $skillsDir
     Write-Host "  skills 已装         : $($names.Count) 个  ($($names -join ', '))"
@@ -492,6 +493,17 @@ $srcHash = Get-Sha $SourcePrompt
 $now = Get-NowIso
 $steps = 0
 
+# WorkBuddy 37.x 记忆载体长度上限（实测 app.asar）：
+#   云记忆 memoryBlock（<memory>）10000 字符；用户级 MEMORY.md（<user_memory>）4000 字符；
+#   工作区 MEMORY.md（<working_memory_content>）10000 字符。
+# 提示词超限会被 WorkBuddy 在读取时静默截断，后半段正文根本进不了对话，表现为「注入成功但没效果」。
+if ($srcText.Length -gt 10000) {
+    Write-Host "  [警告] 提示词 $($srcText.Length) 字符，超过 WorkBuddy 云记忆上限 10000 字符。" -ForegroundColor Yellow
+    Write-Host "         注入成功后也会被截断到前 10000 字符；MEMORY.md 用户记忆上限仅 4000 字符。" -ForegroundColor Yellow
+    Write-Host "         建议把提示词精简到 10000 字符以内再注入，否则破甲效果会明显打折甚至失效。" -ForegroundColor Yellow
+    Write-Log "提示词超长: $($srcText.Length) chars (云记忆上限 10000 / 用户记忆 4000)"
+}
+
 # 1) 账号级云记忆档案（真正被自动注入的全局记忆）
 if ($archFiles.Count -gt 0) {
     if (-not (Test-Path -LiteralPath $memDir)) { New-Item -ItemType Directory -Path $memDir -Force | Out-Null }
@@ -548,7 +560,7 @@ if (-not (Test-Path -LiteralPath (Split-Path -Parent $cfgFile))) {
 if ((Test-Path -LiteralPath $cfgFile) -and -not (Test-Path -LiteralPath $cfgBak)) {
     Copy-Item -LiteralPath $cfgFile -Destination $cfgBak -Force
 }
-Set-AppConfigFlags $cfgFile @{ generateMemoryEnabled = $true; localMemoryEnabled = $true }
+Set-AppConfigFlags $cfgFile @{ generateMemoryEnabled = $true; localMemoryEnabled = $true; disableLocalSkillsMemory = $false }
 $steps++
 Write-Host "[$steps] generateMemoryEnabled = true（备份: $cfgBak）" -ForegroundColor Green
 
