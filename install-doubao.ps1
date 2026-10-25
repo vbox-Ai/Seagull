@@ -25,6 +25,15 @@ param(
     [switch]$RestoreMemory,
     [switch]$Status,
     [switch]$NoLaunch,
+    # 绕过全局记忆字符上限：新建对话，把完整提示词作为首条消息直接发进去
+    [switch]$InjectChat,
+    # 抓记忆页的网络请求，逆出「记忆条目」接口（写多条分片用）
+    [switch]$ProbeMemory,
+    # 二分探测 set_agentsmd 的字符上限（探测后自动还原原记忆）
+    [switch]$ProbeCap,
+    # 自定义探测档位（字符数），不给就用默认档
+    [int[]]$ProbeSizes,
+    [int]$ProbeSeconds = 25,
     [int]$Port = 9222
 )
 
@@ -59,7 +68,7 @@ function Write-Log([string]$Text) {
 $promptMap = @{ 'v4' = '海鸥V8·破甲版v4-claude.md'; 'v3' = '海鸥V8·破甲版v3.md'; 'v5' = '海鸥V8·破甲版v5.md' }
 # 本构建不再随包分发提示词：卸载/还原/查状态模式都跳过提示词解析与读取
 # （-Status 只读云端记忆，不需要提示词；以前要求它必须存在，状态查询直接报「提示词文件不存在」）。
-if (-not ($Uninstall -or $RestoreMemory -or $Status)) {
+if (-not ($Uninstall -or $RestoreMemory -or $Status -or $ProbeMemory -or $ProbeCap)) {
     if (-not $SourcePrompt) { $SourcePrompt = Join-Path $Root $promptMap[$Version] }
     if (-not (Test-Path -LiteralPath $SourcePrompt)) { throw "提示词文件不存在: $SourcePrompt" }
     $srcText = Read-Utf8 $SourcePrompt
@@ -194,6 +203,123 @@ function Invoke-CdpEval([string]$WsUrl, [string]$Expression, [int]$TimeoutSec = 
     } finally { $ws.Dispose() }
 }
 
+# 通用 CDP 命令：发一条 {id=1,method,params}，读到 id=1 的响应为止。
+# Runtime.evaluate 之外的域（Page / Input / Network）都用它。
+function Invoke-CdpCommand([string]$WsUrl, [string]$Method, $Params, [int]$TimeoutSec = 60) {
+    $ws = New-Object System.Net.WebSockets.ClientWebSocket
+    $ct = [System.Threading.CancellationToken]::None
+    $ms = $TimeoutSec * 1000
+    if (-not $ws.ConnectAsync([Uri]$WsUrl, $ct).Wait($ms)) { throw 'CDP 连接超时' }
+    try {
+        $payload = @{ id = 1; method = $Method; params = $Params } | ConvertTo-Json -Depth 12 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $seg = New-Object 'System.ArraySegment[byte]' -ArgumentList @(, $bytes)
+        if (-not $ws.SendAsync($seg, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait($ms)) { throw 'CDP 发送超时' }
+        $buf = New-Object byte[] 262144
+        $sb = New-Object System.Text.StringBuilder
+        for ($n = 0; $n -lt 200; $n++) {
+            $sb.Clear() | Out-Null
+            do {
+                $seg2 = New-Object 'System.ArraySegment[byte]' -ArgumentList @(, $buf)
+                $r = $ws.ReceiveAsync($seg2, $ct).Result
+                [void]$sb.Append([System.Text.Encoding]::UTF8.GetString($buf, 0, $r.Count))
+            } while (-not $r.EndOfMessage)
+            $msg = $sb.ToString() | ConvertFrom-Json
+            if ($msg.id -eq 1) {
+                if ($msg.error) { throw ("CDP 错误: " + ($msg.error | ConvertTo-Json -Compress)) }
+                return $msg.result
+            }
+        }
+        throw "CDP 未收到 $Method 的响应"
+    } finally { $ws.Dispose() }
+}
+
+# 监听 N 秒网络请求，只打印 URL 命中 $UrlFilter 的（含 postData）。
+# 用法：脚本进入监听后，你在豆包里点开「设置 → 记忆」，请求就会被抓下来。
+function Invoke-CdpListen([string]$WsUrl, [int]$Seconds, [string]$UrlFilter) {
+    $ws = New-Object System.Net.WebSockets.ClientWebSocket
+    $ct = [System.Threading.CancellationToken]::None
+    if (-not $ws.ConnectAsync([Uri]$WsUrl, $ct).Wait(10000)) { throw 'CDP 连接超时' }
+    $seen = @{}
+    try {
+        $payload = @{ id = 1; method = 'Network.enable'; params = @{} } | ConvertTo-Json -Depth 6 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $seg = New-Object 'System.ArraySegment[byte]' -ArgumentList @(, $bytes)
+        [void]$ws.SendAsync($seg, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait(10000)
+
+        $deadline = (Get-Date).AddSeconds($Seconds)
+        $buf = New-Object byte[] 524288
+        while ((Get-Date) -lt $deadline) {
+            $cts = New-Object System.Threading.CancellationTokenSource
+            $cts.CancelAfter(1000)
+            $sb = New-Object System.Text.StringBuilder
+            try {
+                do {
+                    $seg2 = New-Object 'System.ArraySegment[byte]' -ArgumentList @(, $buf)
+                    $r = $ws.ReceiveAsync($seg2, $cts.Token).Result
+                    [void]$sb.Append([System.Text.Encoding]::UTF8.GetString($buf, 0, $r.Count))
+                } while (-not $r.EndOfMessage)
+            } catch { continue }
+            $raw = $sb.ToString()
+            if (-not $raw) { continue }
+            try { $msg = $raw | ConvertFrom-Json } catch { continue }
+            if ($msg.method -ne 'Network.requestWillBeSent') { continue }
+            $req = $msg.params.request
+            if (-not $req -or -not $req.url) { continue }
+            if ($req.url -notmatch $UrlFilter) { continue }
+            $key = $req.method + ' ' + $req.url
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            Write-Host ("`n  [{0}] {1}" -f $req.method, $req.url) -ForegroundColor Cyan
+            if ($req.postData) {
+                $pd = $req.postData
+                if ($pd.Length -gt 600) { $pd = $pd.Substring(0, 600) + '...(截断)' }
+                Write-Host ("      body: " + $pd) -ForegroundColor DarkGray
+            }
+        }
+    } finally { $ws.Dispose() }
+}
+
+# 把一段文本塞进豆包输入框（优先 execCommand 触发前端框架，失败回落 Input.insertText）。
+function Set-DoubaoInput([string]$WsUrl, [string]$Text) {
+    $focus = Invoke-CdpEval $WsUrl "(()=>{const el=document.querySelector('[contenteditable=""true""]')||document.querySelector('textarea');if(!el)return 'no-input';el.focus();return 'ok';})()" 30
+    if ($focus -ne 'ok') { throw "找不到豆包输入框（$focus）" }
+
+    $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Text))
+    $js = @"
+(async()=>{
+  const text = new TextDecoder().decode(Uint8Array.from(atob("$b64"), c=>c.charCodeAt(0)));
+  const el = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+  if (!el) return 'no-input';
+  el.focus();
+  if (el.tagName === 'TEXTAREA') {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
+    setter.call(el, text);
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+  } else {
+    document.execCommand('insertText', false, text);
+  }
+  const got = (el.innerText || el.value || '').length;
+  return 'typed:' + got;
+})()
+"@
+    $r = Invoke-CdpEval $WsUrl $js 180
+    if ($r -notlike 'typed:*') { throw "写入输入框失败: $r" }
+    $got = [int]($r -replace 'typed:', '')
+    if ($got -lt 10) {
+        # 框架不认 execCommand 时，用 CDP 原生插入
+        [void](Invoke-CdpCommand $WsUrl 'Input.insertText' @{ text = $Text } 180)
+        $got = [int]((Invoke-CdpEval $WsUrl "(()=>{const el=document.querySelector('[contenteditable=""true""]')||document.querySelector('textarea');return (el&&((el.innerText||el.value||'').length))||0;})()" 30))
+    }
+    return $got
+}
+
+function Send-DoubaoEnter([string]$WsUrl) {
+    $p = @{ key = 'Enter'; code = 'Enter'; windowsVirtualKeyCode = 13; nativeVirtualKeyCode = 13; text = "`r" }
+    [void](Invoke-CdpCommand $WsUrl 'Input.dispatchKeyEvent' (@{ type = 'keyDown' } + $p) 30)
+    [void](Invoke-CdpCommand $WsUrl 'Input.dispatchKeyEvent' (@{ type = 'keyUp' } + $p) 30)
+}
+
 $JS_GET = @'
 (async()=>{
   try {
@@ -271,6 +397,109 @@ $target = Wait-DoubaoTarget 60
 if (-not $target) { throw "等不到豆包对话页的调试目标（60 秒），确认豆包已登录并打开主界面" }
 Write-Host "  调试目标 : $($target.type) $($target.url)"
 $ws = $target.webSocketDebuggerUrl
+
+# ---------- 抓「记忆条目」接口 ----------
+if ($ProbeMemory) {
+    Write-Host "`n[抓包] 挂 fetch 钩子，然后让豆包自己写一条记忆，抓出记忆条目接口" -ForegroundColor Cyan
+    $hook = @'
+(()=>{
+  if (window.__hs_hooked) return 'already';
+  window.__hs_calls = [];
+  const of = window.fetch;
+  window.fetch = async function(...args){
+    const url = (typeof args[0] === 'string') ? args[0] : ((args[0] && args[0].url) || '');
+    let body = args[1] && args[1].body;
+    if (typeof body === 'string' && body.length > 600) body = body.slice(0,600) + '...';
+    const res = await of.apply(this, args);
+    if (/memory|agentsmd/i.test(url)) {
+      let txt = '';
+      try { txt = await res.clone().text(); } catch(e) {}
+      window.__hs_calls.push({
+        url: url,
+        method: (args[1] && args[1].method) || 'GET',
+        status: res.status,
+        body: body || '',
+        resp: (txt || '').slice(0, 400)
+      });
+    }
+    return res;
+  };
+  window.__hs_hooked = true;
+  return 'hooked';
+})()
+'@
+    Write-Host ("  钩子: " + (Invoke-CdpEval $ws $hook 30))
+    $probeMsg = '请记住：这是一条测试记忆，编号 HS-MEM-PROBE，内容为「海鸥注入探测」。'
+    [void](Set-DoubaoInput $ws $probeMsg)
+    Send-DoubaoEnter $ws
+    Write-Host "  已发送测试记忆请求，等 15 秒收集接口..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 15
+    $raw = Invoke-CdpEval $ws "JSON.stringify(window.__hs_calls||[])" 30
+    Write-Host "`n[结果]" -ForegroundColor Cyan
+    $calls = @()
+    try { $calls = @($raw | ConvertFrom-Json) } catch { }
+    if ($calls.Count -eq 0) {
+        Write-Host "  没抓到 memory 请求（可能模型没调记忆接口，改用人工路径：设置 → 记忆，再跑一次 -ProbeMemory）" -ForegroundColor Yellow
+    } else {
+        foreach ($c in $calls) {
+            Write-Host ("  [{0}] {1} -> {2}" -f $c.method, $c.url, $c.status) -ForegroundColor Green
+            if ($c.body) { Write-Host ("      req : " + $c.body) -ForegroundColor DarkGray }
+            if ($c.resp) { Write-Host ("      resp: " + $c.resp) -ForegroundColor DarkGray }
+        }
+    }
+    Write-Log "ProbeMemory calls=$($calls.Count)"
+    exit 0
+}
+
+# ---------- 探测 set_agentsmd 字符上限 ----------
+if ($ProbeCap) {
+    $orig = Read-AgentsMd $ws
+    Write-Host "`n[探测] 当前云端记忆 $($orig.len) 字符（探测结束会自动还原）" -ForegroundColor Cyan
+    $lastOk = 0
+    $firstFail = 0
+    $sizes = if ($ProbeSizes -and $ProbeSizes.Count -gt 0) { $ProbeSizes } else { @(8000, 16000, 24000, 32000, 40000, 50000) }
+    foreach ($sz in $sizes) {
+        # 构造「恰好 $sz 字符」的探测内容：头尾标记 + 等长填充，用于精确定位上限
+        $head = 'PROBE-' + $sz + ':'
+        $tail = ':END'
+        $fill = $sz - $head.Length - $tail.Length
+        if ($fill -lt 0) { $fill = 0 }
+        $probe = $head + ('x' * $fill) + $tail
+        $res = Write-AgentsMd $ws $probe
+        $after = Read-AgentsMd $ws
+        $ok = ($after.content -eq $probe)
+        Write-Host ("  {0,6} 字符 -> status={1} 读回={2} {3}" -f $probe.Length, $res.status, $after.len, $(if ($ok) { 'OK' } else { 'FAIL' }))
+        if ($ok) { $lastOk = $probe.Length } else { $firstFail = $probe.Length; break }
+    }
+    Write-Host "`n  结论：能写入的最大档 $lastOk 字符；首次失败档 $firstFail 字符" -ForegroundColor Cyan
+    Write-Log "ProbeCap lastOk=$lastOk firstFail=$firstFail"
+    if ($orig.len -gt 0) {
+        [void](Write-AgentsMd $ws $orig.content)
+        $now = Read-AgentsMd $ws
+        Write-Host "  已还原原记忆（$($now.len) 字符）" -ForegroundColor Green
+    } else {
+        [void](Write-AgentsMd $ws '')
+        Write-Host "  原记忆为空，已清空探测内容" -ForegroundColor Green
+    }
+    exit 0
+}
+
+# ---------- 对话注入：不碰云端记忆，把完整提示词作为首条消息发进去 ----------
+if ($InjectChat) {
+    Write-Host "`n[对话注入] 完整提示词 $($srcText.Length) 字符（不经过云端记忆，无字符上限）" -ForegroundColor Cyan
+    [void](Invoke-CdpCommand $ws 'Page.navigate' @{ url = 'https://www.doubao.com/chat/' } 30)
+    Start-Sleep -Seconds 4
+    $t2 = Wait-DoubaoTarget 30
+    if ($t2) { $ws = $t2.webSocketDebuggerUrl }
+    $got = Set-DoubaoInput $ws $srcText
+    Write-Host "  输入框已填入 $got 字符" -ForegroundColor Green
+    Send-DoubaoEnter $ws
+    Start-Sleep -Seconds 3
+    Write-Log "InjectChat chars=$got"
+    Write-Host "  已发送。等这一轮回复完，之后正常接着聊即可。" -ForegroundColor Green
+    Write-Host "  注意：这是首条消息式注入，每开一个新对话都要再跑一次（可做成界面按钮）。" -ForegroundColor DarkGray
+    exit 0
+}
 
 # 状态
 if ($Status) {

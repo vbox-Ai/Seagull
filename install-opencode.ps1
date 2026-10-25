@@ -9,7 +9,11 @@ param(
     [switch]$Uninstall,
     # 只把注入的内容还原成原版（AGENTS.md 摘块），技能库与 install-state.json 一概不动。
     # 界面上的「装回原始记忆」按钮走这条路径。
-    [switch]$RestoreMemory
+    [switch]$RestoreMemory,
+    # 把破甲 agent 设为默认 agent（写 opencode.json 的 default_agent）
+    [switch]$SetDefault,
+    # 破甲 agent 固定使用的模型（provider/model，例：wb-proxy/deepseek-v4.1-flash）
+    [string]$AgentModel
 )
 
 Set-StrictMode -Off
@@ -112,6 +116,14 @@ $agentsMd = Join-Path $ConfigDir 'AGENTS.md'
 $managedDir = Join-Path $ConfigDir 'managed-prompts'
 $backupPath = Join-Path $managedDir 'AGENTS.md.bak'
 $markerEnd = '<!-- HANSHUANG-INJECT:END -->'
+
+# 破甲 agent：OpenCode 的 agent markdown「正文即系统提示词」。
+# 这是与 AGENTS.md 的本质区别 —— AGENTS.md 是附加 instructions，模型会和内置系统提示词
+# 打架；agent 正文直接成为唯一系统提示词，人格优先级最高。提示词一字不删，原样整份放入。
+$agentsDir = Join-Path $ConfigDir 'agents'
+$agentName = 'hanshuang'
+$agentFile = Join-Path $agentsDir ($agentName + '.md')
+$configJson = Join-Path $ConfigDir 'opencode.json'
 
 # OpenCode 在配置目录下按 {skill,skills}/**/SKILL.md 发现技能，所以技能落 <ConfigDir>\skills。
 if ([string]::IsNullOrWhiteSpace($SkillsSource)) {
@@ -296,7 +308,29 @@ if ($Uninstall -or $RestoreMemory) {
     } else {
         Write-Host "No AGENTS.md found, nothing to do"
     }
-    # 2. 删除同步安装的 skills —— 「装回原始记忆」模式跳过整块：技能要留着，
+    # 2. 摘掉破甲 agent：「装回原始记忆」也要摘 —— agent 正文就是提示词本体，
+    #    留着它等于没还原。default_agent 指向它时一并清掉，否则 OpenCode 启动会找不到 agent。
+    if (Test-Path -LiteralPath $agentFile) {
+        Remove-Item -LiteralPath $agentFile -Force
+        Write-Host "Removed seagull agent: agents\$agentName.md"
+    }
+    if (@(Get-ChildItem -LiteralPath $agentsDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+        Remove-Item -LiteralPath $agentsDir -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $configJson) {
+        try {
+            $cfg = Read-Utf8 $configJson | ConvertFrom-Json
+            if ($cfg.default_agent -eq $agentName) {
+                $cfg.PSObject.Properties.Remove('default_agent')
+                Write-Utf8NoBom $configJson (($cfg | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
+                Write-Host "Cleared default_agent"
+            }
+        } catch {
+            Write-Host "opencode.json 解析失败，跳过 default_agent 清理"
+        }
+    }
+
+    # 3. 删除同步安装的 skills —— 「装回原始记忆」模式跳过整块：技能要留着，
     #    install-state.json（技能清单就存在里面）也必须一起留。
     if ($RestoreMemory) {
         Write-Host "Restore-memory: managed skills and install-state.json kept"
@@ -401,6 +435,36 @@ if ($blk) {
     }
     Write-Utf8NoBom $agentsMd ($existing.TrimEnd() + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine)
     Write-Host "Appended injected block -> $agentsMd (original content kept)"
+}
+
+# ---------- 破甲 agent（系统提示词层） ----------
+# 与上面的 AGENTS.md 附加块不同：agent 文件的 markdown 正文会直接成为该 agent 的
+# 系统提示词，不再有「内置编程助手人格 + 附加指令」的冲突。提示词整份写入，一字不裁。
+$agentFm = @('---', 'description: 海鸥V8·破甲版（系统提示词 · 完整人格）', 'mode: primary')
+if (-not [string]::IsNullOrWhiteSpace($AgentModel)) { $agentFm += ('model: ' + $AgentModel) }
+$agentFm += '---'
+$agentBody = ($agentFm -join "`n") + [Environment]::NewLine + [Environment]::NewLine +
+             $promptText.TrimStart() + [Environment]::NewLine
+New-Item -ItemType Directory -Force -Path $agentsDir | Out-Null
+Write-Utf8NoBom $agentFile $agentBody
+Write-Host ("Wrote agent -> agents\" + $agentName + ".md (" + $promptText.Length + " chars)")
+
+# 可选：设为默认 agent。不改用户其它字段，只加 default_agent。
+if ($SetDefault) {
+    $cfg = [ordered]@{}
+    if (Test-Path -LiteralPath $configJson) {
+        try {
+            $parsed = Read-Utf8 $configJson | ConvertFrom-Json
+            foreach ($p in $parsed.PSObject.Properties) { $cfg[$p.Name] = $p.Value }
+        } catch {
+            Write-Host "opencode.json 解析失败，跳过 default_agent 写入" -ForegroundColor Yellow
+        }
+    }
+    if ($cfg.Count -gt 0) {
+        $cfg['default_agent'] = $agentName
+        Write-Utf8NoBom $configJson (($cfg | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
+        Write-Host ("Set default_agent -> " + $agentName)
+    }
 }
 
 # 先读上一次安装写下的技能清单（新版装完要按它清理旧版遗留）

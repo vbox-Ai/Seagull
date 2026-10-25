@@ -113,6 +113,28 @@ Remove-Target '临时文件' (Join-Path $env:TEMP 'seagull-rea-main.zip')
 Get-ChildItem $env:TEMP -Directory -Filter 'seagull-prompt-*' -ErrorAction SilentlyContinue |
   ForEach-Object { Remove-Target '临时目录' $_.FullName }
 
+# --- 2.7 Trae 全局规则 / OpenCode 破甲 agent ---------------------------------
+# 这两个目标不走 clear-injected-prompts 的常规路径：
+#   · Trae 的全局规则在 ~/.trae(user_rules) 与 ~/.trae-cn，本工具还可能写过全局记忆；
+#   · OpenCode 的破甲 agent（agents\hanshuang.md）正文就是整份系统提示词。
+# Trae 有自带卸载脚本就调它（能精确还原记忆备份），再兜底直删残留文件。
+Write-Host '[2.7/6] 清除 Trae 规则 / OpenCode 破甲 agent'
+$traeUninstall = Join-Path $AppDir 'resources\install-trae.ps1'
+if (Test-Path -LiteralPath $traeUninstall) {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $traeUninstall -Uninstall
+  Write-Host ("  Trae 卸载退出码: {0}（0=已完成）" -f $LASTEXITCODE)
+} else {
+  foreach ($tn in @('.trae', '.trae-cn')) {
+    $tRoot = Join-Path $env:USERPROFILE $tn
+    Remove-Target '规则文件' (Join-Path $tRoot 'user_rules\海鸥V8·破甲版.md')
+    Remove-Target '记忆备份' (Join-Path $tRoot 'managed-prompts\user_profile.md.bak')
+  }
+}
+foreach ($cfg in @((Join-Path $env:USERPROFILE '.config\opencode'), (Join-Path $env:LOCALAPPDATA 'opencode'))) {
+  Remove-Target '破甲 agent' (Join-Path $cfg 'agents\hanshuang.md')
+}
+Remove-Target '豆包注入状态' (Join-Path $env:USERPROFILE '.doubao\managed-prompts')
+
 # --- 3. 用户数据与缓存 --------------------------------------------------------
 Write-Host '[3/6] 清理用户数据与缓存'
 if ($KeepData) {

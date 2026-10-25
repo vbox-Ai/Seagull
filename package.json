@@ -76,6 +76,10 @@
         "to": "install-opencode.ps1"
       },
       {
+        "from": "install-trae.ps1",
+        "to": "install-trae.ps1"
+      },
+      {
         "from": "seep-kit",
         "to": "seep-kit",
         "filter": [

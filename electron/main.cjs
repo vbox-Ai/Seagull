@@ -135,6 +135,8 @@ const SCRIPTS = {
   "workbuddy-cn": "install-workbuddy.ps1",
   dsh: "install-dsh.ps1",
   doubao: "install-doubao.ps1",
+  // Trae：全局规则 user_rules 全量加载，只注入提示词（无官方技能库）
+  trae: "install-trae.ps1",
 };
 
 const TARGET_IDS = Object.keys(SCRIPTS);
@@ -1277,8 +1279,25 @@ async function doUninstall(targetId) {
   return { ...res, installed: installedSnapshot().installed };
 }
 
-async function doRestore(targetId) {
-  if (!SCRIPTS[targetId]) {
+// 豆包专属：全局记忆有 12000 字符硬上限，完整提示词进不去。
+// 走「首条消息」通道——新建对话，把整份提示词作为第一句话发进去，绕开所有存储上限。
+async function doDoubaoChatInject() {
+  const prompt = memoryPrompt();
+  if (!prompt) {
+    const text = `记忆文件为空：请先把提示词粘进 ${p(MEMORY_DIR)} 下的 .md 文件。`;
+    send("tool:log", { label: "破甲对话中止", text: text + "\n" });
+    return { ok: false, code: -1, timedOut: false, out: text, error: text, installed: installedSnapshot().installed };
+  }
+  const res = await runPowerShell(
+    ["-File", p(SCRIPTS.doubao), "-SourcePrompt", prompt.path, "-InjectChat"],
+    "豆包破甲对话注入",
+    INSTALL_TIMEOUT,
+  );
+  appendHistory({ action: "chat-inject", target: "doubao", prompt: prompt.name, ok: res.ok, detail: res.error || "" });
+  return { ...res, installed: installedSnapshot().installed };
+}
+
+async function doRestore(targetId) {  if (!SCRIPTS[targetId]) {
     return { ok: false, code: -1, timedOut: false, out: `未知的破甲目标：${targetId}`, installed: installedSnapshot().installed };
   }
   const res = await runPowerShell(restoreMemoryArgs(targetId), `装回 ${targetId} 原始记忆`, UNINSTALL_TIMEOUT);
@@ -1427,6 +1446,7 @@ function registerIpc() {
   // 零残留），跟「只想换回原版」正好相反。注入内容本身也不需要它兜底：本 handler 与卸载
   // 走同一段还原逻辑，各注入点（AGENTS.md / CLAUDE.md / config.toml / 记忆档案）都在里面处理掉了。
   ipcMain.handle("tool:restoreMemory", (_e, targetId) => doRestore(targetId));
+  ipcMain.handle("tool:doubao:chatInject", () => doDoubaoChatInject());
 
   ipcMain.handle("tool:restartCodex", async () => {
     const cmd =

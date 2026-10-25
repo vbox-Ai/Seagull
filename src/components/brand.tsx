@@ -163,6 +163,22 @@ export function BrandSeagull(props: BrandProps) {
   );
 }
 
+/** Trae：方块里折角箭头，够识别即可（官方标是深色几何形）。 */
+function BrandTrae({ size = 24, color }: BrandProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" stroke={color || "currentColor"} strokeWidth="1.7" />
+      <path
+        d="M8 15.6 15.6 8M15.6 8h-4.4M15.6 8v4.4"
+        stroke={color || "currentColor"}
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** 图标键 → 组件映射；targets.ts 的 icon 字段存键名。 */
 export const BRAND_ICONS: Record<string, (p: BrandProps) => ReactElement> = {
   codex: BrandCodex,
@@ -174,6 +190,7 @@ export const BRAND_ICONS: Record<string, (p: BrandProps) => ReactElement> = {
   "workbuddy-cn": BrandWorkbuddy,
   dsh: BrandDeepseek,
   doubao: BrandDoubao,
+  trae: BrandTrae,
   tutorial: BrandSeagull,
 };
 
@@ -188,6 +205,7 @@ export const BRAND_COLORS: Record<string, string> = {
   "workbuddy-cn": "#ef4444",
   dsh: "#4d6bfe",
   doubao: "#4e8ef7",
+  trae: "#2b2b2b",
   tutorial: "#0ea5e9",
 };
 

@@ -111,6 +111,16 @@ export const TARGETS: Target[] = [
     desc: TARGET_DESC,
     uninstallLabel: "卸载豆包",
   },
+  {
+    // Trae：全局规则 %userprofile%\.trae(user_rules) / .trae-cn，整份提示词全量加载
+    id: "trae",
+    icon: "trae",
+    nav: "Trae 破甲",
+    eyebrow: "TRAE 破甲",
+    title: "Trae 破甲",
+    desc: TARGET_DESC,
+    uninstallLabel: "卸载 Trae",
+  },
 ];
 
 export const TUTORIAL_TITLE = "使用教程";
@@ -125,8 +135,9 @@ export const TUTORIAL_TEXT = [
   "",
   "第 2 步：注入目标 AI",
   "    回首页，点你要用的平台卡片（Codex / ZCode / Cursor / OpenCode /",
-  "    Claude / WorkBuddy 国际版 / 国内版 / DeepSeek Harness / 豆包）",
+  "    Claude / WorkBuddy 国际版 / 国内版 / DeepSeek Harness / 豆包 / Trae）",
   "    → 点「安装」。装完把那个 AI 完全关掉再重新打开。",
+  "    豆包特殊：云记忆上限 12000 字符，完整提示词点「开启破甲对话」走首条消息注入。",
   "",
   "第 3 步：开始用（重点）",
   "    在对话框里输入：",

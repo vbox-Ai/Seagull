@@ -128,6 +128,8 @@ export type HsApi = {
   uninstall(targetId: string): Promise<InstallResult>;
   /** 装回原始记忆（仅 WorkBuddy）：还原安装前的记忆档案，保留技能库。 */
   restoreMemory(targetId: string): Promise<InstallResult>;
+  /** 豆包专属：把完整提示词作为首条消息发进新对话（绕开云记忆 12000 字符上限）。 */
+  doubaoChatInject(): Promise<InstallResult>;
   restartCodex(): Promise<RestartResult>;
   restartDsh(): Promise<RestartResult>;
   seepState(): Promise<SeepState>;

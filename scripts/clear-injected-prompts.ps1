@@ -227,6 +227,51 @@ foreach ($m in $marked) {
 }
 
 # -----------------------------------------------------------------------------
+# 2.5 Trae 全局规则 / OpenCode 破甲 agent
+#   · OpenCode agent 的 markdown 正文就是系统提示词，整份都是提示词 → 整文件删。
+#   · Trae 全局规则是独立文件 → 有 HANSHUANG 标记就删整份。
+#   · Trae 全局记忆是用户文件 → 只摘标记块；有安装前备份就还原备份。
+# -----------------------------------------------------------------------------
+Write-Host '[2.5/5] Trae 全局规则 / OpenCode 破甲 agent'
+if (Want 'opencode') {
+  $ocAgent = Join-Path $allHomes['opencode'] 'agents\hanshuang.md'
+  if (Test-Path -LiteralPath $ocAgent) {
+    Plan '删除（本工具产物）' $ocAgent 'OpenCode 破甲 agent（正文即系统提示词）'
+  }
+}
+
+foreach ($tn in @('trae', 'trae-cn')) {
+  if (-not (Want $tn)) { continue }
+  $tRoot = Join-Path $H ('.' + $tn)
+  if (-not (Test-Path -LiteralPath $tRoot)) { continue }
+
+  $tRule = Join-Path (Join-Path $tRoot 'user_rules') '海鸥V8·破甲版.md'
+  if (Test-Path -LiteralPath $tRule) {
+    $rt = ''
+    try { $rt = [IO.File]::ReadAllText($tRule) } catch { }
+    if ($rt -match 'HANSHUANG-INJECT') {
+      Plan '删除（本工具产物）' $tRule ("{0} / 全局规则" -f $tn)
+    } else {
+      Keep ("Trae 全局规则无注入标记，保留：{0}" -f $tRule)
+    }
+  }
+
+  $tMem = Join-Path (Join-Path $tRoot 'memory') 'user_profile.md'
+  $tBak = Join-Path (Join-Path $tRoot 'managed-prompts') 'user_profile.md.bak'
+  if (Test-Path -LiteralPath $tMem) {
+    $mt = ''
+    try { $mt = [IO.File]::ReadAllText($tMem) } catch { }
+    if ($mt -match 'HANSHUANG-INJECT') {
+      if (Test-Path -LiteralPath $tBak) {
+        Plan '恢复原文（用安装前备份）' $tMem ("{0} / 全局记忆" -f $tn) $tBak
+      } else {
+        Plan '摘除 HANSHUANG 标记块' $tMem ("{0} / 全局记忆" -f $tn)
+      }
+    }
+  }
+}
+
+# -----------------------------------------------------------------------------
 # 3. config.toml：只在真有指向提示词的行时才动
 # -----------------------------------------------------------------------------
 Write-Host '[3/5] config.toml 提示词指针'
@@ -647,6 +692,23 @@ foreach ($p in $plan) {
         Remove-Item -LiteralPath $p.Src -Force
       }
       '删除（备份本身是旧注入）' { Remove-Item -LiteralPath $p.Path -Force -ErrorAction Stop }
+      '删除（本工具产物）' { Remove-Item -LiteralPath $p.Path -Force -ErrorAction Stop }
+      '摘除 HANSHUANG 标记块' {
+        $t = [IO.File]::ReadAllText($p.Path)
+        $m1 = [regex]::Match($t, '<!--\s*HANSHUANG-INJECT:BEGIN[^\r\n]*-->')
+        if ($m1.Success) {
+          $tail = $t.Substring($m1.Index + $m1.Length)
+          $m2 = [regex]::Match($tail, '<!--\s*HANSHUANG-INJECT:END\s*-->')
+          if ($m2.Success) {
+            $left = ($t.Substring(0, $m1.Index) + $tail.Substring($m2.Index + $m2.Length)).Trim()
+            if ($left.Length -eq 0) {
+              Remove-Item -LiteralPath $p.Path -Force -ErrorAction Stop
+            } else {
+              [IO.File]::WriteAllText($p.Path, $left + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+            }
+          }
+        }
+      }
       '注入文件（摘除后仅剩垃圾）' {
         # 先试着找一份干净备份还原，找不到才删
         $home = Split-Path -Parent $p.Path

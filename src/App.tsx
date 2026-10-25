@@ -242,6 +242,20 @@ export function App() {
     [],
   );
 
+  // 豆包专属：云记忆上限 12000 字符，完整提示词走「首条消息」注入。
+  const runChatInject = useCallback(async (targetId: string) => {
+    setLogText("");
+    setStatus("正在把完整提示词发进新对话 …");
+    setLevel("busy");
+    setBusy(true);
+    const res = await hs.doubaoChatInject();
+    setInstalled(res.installed || {});
+    setStatus(res.ok ? "破甲对话已开启 · 完整提示词已作为首条消息发送" : "破甲对话注入失败（退出码 " + res.code + "）");
+    setLevel(res.ok ? "ok" : "err");
+    setBusy(false);
+    void targetId;
+  }, []);
+
   const runRestart = useCallback(async () => {
     setStatus("正在重启 Codex …");
     setLevel("busy");
@@ -387,6 +401,7 @@ export function App() {
                 logText={logText}
                 onInstall={() => runInstall(currentTarget.id)}
                 onRestore={() => runRestoreMemory(currentTarget.id)}
+                onChatInject={() => runChatInject(currentTarget.id)}
                 onRestartDsh={runRestartDsh}
                 onBack={() => {
                   setWizardTarget(null);

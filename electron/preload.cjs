@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("hs", {
   uninstall: (targetId) => ipcRenderer.invoke("tool:uninstall", targetId),
   // 装回原始记忆：还原安装前的记忆档案，保留技能库（仅 WorkBuddy）
   restoreMemory: (targetId) => ipcRenderer.invoke("tool:restoreMemory", targetId),
+  // 豆包专属：把完整提示词作为首条消息发进新对话（绕开云记忆 12000 字符上限）
+  doubaoChatInject: () => ipcRenderer.invoke("tool:doubao:chatInject"),
   restartCodex: () => ipcRenderer.invoke("tool:restartCodex"),
   restartDsh: () => ipcRenderer.invoke("tool:restartDsh"),
   // 随包分发的 Seep 逆向工作台

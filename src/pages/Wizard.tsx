@@ -19,6 +19,7 @@ type Props = {
   logText: string;
   onInstall: () => void;
   onRestore: () => void;
+  onChatInject: () => void;
   onRestartDsh: () => void;
   onBack: () => void;
   onManagePrompts: () => void;
@@ -40,6 +41,7 @@ export function Wizard({
   logText,
   onInstall,
   onRestore,
+  onChatInject,
   onRestartDsh,
   onBack,
   onManagePrompts,
@@ -48,6 +50,7 @@ export function Wizard({
   const [useSeep, setUseSeep] = useState(true);
   const [useRea, setUseRea] = useState(false);
   const isDsh = target.id === "dsh";
+  const isDoubao = target.id === "doubao";
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const prev = () => (step === 0 ? onBack() : setStep((s) => s - 1));
@@ -224,10 +227,22 @@ export function Wizard({
                 {busy ? "执行中 …" : "重启 DSH"}
               </button>
             )}
+            {isDoubao && (
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={onChatInject}>
+                {busy ? "执行中 …" : "开启破甲对话（完整提示词）"}
+              </button>
+            )}
             <button type="button" className="btn btn-primary" disabled={busy} onClick={onInstall}>
               {busy ? "执行中 …" : "开始注入"}
             </button>
           </div>
+          {isDoubao && (
+            <p className="app-prose" style={{ marginTop: 12 }}>
+              豆包的云端全局记忆有 12000 字符硬上限，完整提示词塞不进去。
+              「开启破甲对话」会新建一个对话，把整份提示词作为第一条消息发进去，绕开这个上限——
+              每开新对话点一次即可。
+            </p>
+          )}
         </div>
       )}
 
