@@ -20,9 +20,9 @@ $ToolsDir  = Join-Path $Root 'Tool\mcp\Tool\safe'
 New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
 $Mirrors = @(
-    '',                                  # 官方源
+    'https://gh-proxy.com/',             # 国内镜像优先：官方源在国内直连常超时，别让用户干等
     'https://ghproxy.net/',
-    'https://gh-proxy.com/'
+    ''                                   # 官方源兜底
 )
 
 function Write-Ok($m)   { Write-Host "    [OK] $m" -ForegroundColor Green }
@@ -38,7 +38,7 @@ function Get-FileWithMirror {
         try {
             Write-Info "尝试 $tag ..."
             $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $u -OutFile $OutFile -TimeoutSec 300 -UseBasicParsing
+            Invoke-WebRequest -Uri $u -OutFile $OutFile -TimeoutSec 120 -UseBasicParsing
             if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 1024) {
                 Write-Ok "下载成功 ($tag)"
                 return $true
@@ -55,7 +55,7 @@ function Get-GitHubAsset {
     param([string]$Repo, [string]$Pattern)
     try {
         $api = "https://api.github.com/repos/$Repo/releases/latest"
-        $rel = Invoke-RestMethod -Uri $api -TimeoutSec 60 -Headers @{ 'User-Agent' = 'seep-setup' }
+        $rel = Invoke-RestMethod -Uri $api -TimeoutSec 30 -Headers @{ 'User-Agent' = 'seep-setup' }
         $asset = $rel.assets | Where-Object { $_.name -match $Pattern } | Select-Object -First 1
         if ($asset) { return @{ Url = $asset.browser_download_url; Name = $asset.name; Tag = $rel.tag_name } }
     } catch {

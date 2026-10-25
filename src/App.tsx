@@ -89,7 +89,10 @@ export function App() {
     hs.promptsList().then((list) => {
       setPrompts(list);
       const cur = list.find((p) => p.current) || list[0];
-      if (cur) setSelectedPrompt((prev) => prev || cur.name);
+      if (cur) {
+        // 之前选中的还在 → 保持；不在了（被删/刚导入还没选）→ 跟随当前注入源
+        setSelectedPrompt((prev) => (prev && list.some((p) => p.name === prev) ? prev : cur.name));
+      }
     });
   }, []);
 
@@ -257,6 +260,16 @@ export function App() {
   );
 
   const currentTarget = useMemo(() => TARGETS.find((t) => t.id === wizardTarget), [wizardTarget]);
+
+  // 个人中心里 导入/删除/设为当前 后，同步刷新注入向导那份提示词列表
+  const handlePromptsChanged = useCallback(
+    (selected?: string) => {
+      if (selected) setSelectedPrompt(selected);
+      reloadPrompts();
+    },
+    [reloadPrompts],
+  );
+
   const openLink = (url: string) => hs.openQQ(url);
   const openQQ = () => openLink(QQ_LINK);
 
@@ -364,6 +377,7 @@ export function App() {
                     onOpenQQ={openQQ}
                     onQuit={() => hs.quit()}
                     onOpenDiag={() => setView("diag")}
+                    onPromptsChanged={handlePromptsChanged}
                   />
                 )}
 

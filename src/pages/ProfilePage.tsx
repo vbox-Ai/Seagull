@@ -13,10 +13,12 @@ type Props = {
   onOpenQQ: () => void;
   onQuit: () => void;
   onOpenDiag: () => void;
+  /** 个人中心改动提示词库（导入/删除/设为当前）后，通知 App 同步注入向导的列表。 */
+  onPromptsChanged?: (selected?: string) => void;
 };
 
 /** 个人中心：加群 + 版本 + 任务历史 + 提示词管理 + 远程配置热更新。 */
-export function ProfilePage({ version, status, level, theme, onToggleTheme, onOpenQQ, onQuit, onOpenDiag }: Props) {
+export function ProfilePage({ version, status, level, theme, onToggleTheme, onOpenQQ, onQuit, onOpenDiag, onPromptsChanged }: Props) {
   const statusTone =
     level === "err" ? "badge-error" : level === "ok" ? "badge-success" : "badge-neutral";
 
@@ -43,18 +45,21 @@ export function ProfilePage({ version, status, level, theme, onToggleTheme, onOp
       setPromptMsg(r.ok ? `已导入：${r.name || (r.results && r.results[0]?.name)}` : r.error || "导入失败");
     }
     reload();
+    onPromptsChanged?.();
   };
 
   const deletePrompt = async (name: string) => {
     const r = await hs.promptsDelete(name);
     setPromptMsg(r.ok ? "已删除" : r.error || "删除失败");
     reload();
+    onPromptsChanged?.();
   };
 
   const selectPrompt = async (name: string) => {
     const r = await hs.promptsSelect(name);
     setPromptMsg(r.ok ? `当前注入源：${name}` : r.error || "切换失败");
     reload();
+    if (r.ok) onPromptsChanged?.(name);
   };
 
   const fetchRemote = async () => {
