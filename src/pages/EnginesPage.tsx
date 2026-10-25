@@ -14,6 +14,14 @@ type Props = {
   onSeepInstall: () => void;
   onSeepVerify: () => void;
   onSeepUninstall: () => void;
+  deps: Dep[] | null;
+  depsError: string;
+  depsBusy: boolean;
+  depsMsg: string;
+  fixLog: string;
+  fixing: boolean;
+  onDepsCheck: () => void;
+  onDepsFix: () => void;
 };
 
 /** Seep 工作台页：Seep（离线）+ REA（在线）+ 依赖检测 + 故障诊断。 */
@@ -26,15 +34,17 @@ export function EnginesPage({
   onSeepInstall,
   onSeepVerify,
   onSeepUninstall,
+  deps,
+  depsError,
+  depsBusy,
+  depsMsg,
+  fixLog,
+  fixing,
+  onDepsCheck,
+  onDepsFix,
 }: Props) {
   const [rea, setRea] = useState<ReaState | null>(null);
   const [reaProgress, setReaProgress] = useState<ReaProgress | null>(null);
-  const [deps, setDeps] = useState<Dep[] | null>(null);
-  const [depsError, setDepsError] = useState("");
-  const [depsBusy, setDepsBusy] = useState(false);
-  const [depsMsg, setDepsMsg] = useState("");
-  const [fixLog, setFixLog] = useState("");
-  const [fixing, setFixing] = useState(false);
   const [report, setReport] = useState("");
   const [reportMsg, setReportMsg] = useState("");
 
@@ -63,45 +73,6 @@ export function EnginesPage({
   const runReaUninstall = async () => {
     await hs.reaUninstall();
     refreshRea();
-  };
-
-  const runDepsCheck = async () => {
-    setDepsBusy(true);
-    setDepsError("");
-    const r = await hs.depsCheck();
-    setDeps(r.deps);
-    if (!r.ok) setDepsError(r.error || "检测失败");
-    setDepsBusy(false);
-  };
-
-  /**
-     修复依赖：修复脚本可能跑几十分钟，必须把实时日志和忙碌状态都亮出来，
-     否则用户以为按钮没反应。日志走本地订阅，只显示修复输出。
-  */
-  const runDepsFix = async () => {
-    if (fixing) return;
-    setFixing(true);
-    setDepsMsg("正在修复依赖，请耐心等待（首次修复需要下载工具链，可能需要较长时间）…");
-    setFixLog("");
-    const off = hs.onLog((p) => setFixLog((prev) => (prev + p.text).slice(-20000)));
-    try {
-      const r = await hs.depsFix();
-      if (r.partial && r.depsResults) {
-        setDepsMsg(
-          `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
-        );
-      } else if (r.ok) {
-        setDepsMsg("依赖修复完成，正在重新检测 …");
-      } else {
-        setDepsMsg(
-          "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
-        );
-      }
-    } finally {
-      off();
-      setFixing(false);
-      runDepsCheck();
-    }
   };
 
   const runDiagnose = async () => {
@@ -181,10 +152,10 @@ export function EnginesPage({
           </div>
         </div>
         <div className="app-inline-actions">
-          <button type="button" className="btn btn-secondary" disabled={depsBusy || fixing} onClick={runDepsCheck}>
+          <button type="button" className="btn btn-secondary" disabled={depsBusy || fixing} onClick={onDepsCheck}>
             {depsBusy ? "检测中 …" : "检测依赖"}
           </button>
-          <button type="button" className="btn btn-primary" disabled={depsBusy || fixing} onClick={runDepsFix}>
+          <button type="button" className="btn btn-primary" disabled={depsBusy || fixing} onClick={onDepsFix}>
             {fixing ? "修复中 …" : "修复依赖"}
           </button>
         </div>

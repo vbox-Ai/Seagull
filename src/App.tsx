@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   APP_NAME,
@@ -10,6 +10,7 @@ import {
 } from "./data/targets";
 import {
   hs,
+  type DepsResult,
   type EnginesState,
   type InstalledMap,
   type MemoryPrompt,
@@ -69,6 +70,14 @@ export function App() {
   });
   const [jitterId, setJitterId] = useState<string | null>(null);
 
+  // 依赖检测/修复状态提升到 App：切页不卸载，后台 PowerShell 进程继续时 UI 不丢。
+  const [depsResult, setDepsResult] = useState<DepsResult | null>(null);
+  const [depsChecking, setDepsChecking] = useState(false);
+  const [depsFixRunning, setDepsFixRunning] = useState(false);
+  const [depsFixLog, setDepsFixLog] = useState("");
+  const [depsFixMsg, setDepsFixMsg] = useState("");
+  const depsFixRunningRef = useRef(false);
+
   useEffect(() => {
     document.title = APP_NAME;
   }, []);
@@ -107,7 +116,12 @@ export function App() {
   }, [reloadOverview, reloadPrompts]);
 
   useEffect(() => {
-    const offLog = hs.onLog((p) => setLogText((prev) => (prev + p.text).slice(-20000)));
+    const offLog = hs.onLog((p) => {
+      setLogText((prev) => (prev + p.text).slice(-20000));
+      if (depsFixRunningRef.current) {
+        setDepsFixLog((prev) => (prev + p.text).slice(-20000));
+      }
+    });
     const offStatus = hs.onStatus((p) => {
       setBusy(p.state === "running");
       setStatus(p.label);
@@ -257,6 +271,40 @@ export function App() {
     setBusy(false);
   }, []);
 
+  const runDepsCheck = useCallback(async () => {
+    setDepsChecking(true);
+    const r = await hs.depsCheck();
+    setDepsResult(r);
+    setDepsChecking(false);
+  }, []);
+
+  const runDepsFix = useCallback(async () => {
+    if (depsFixRunningRef.current) return;
+    depsFixRunningRef.current = true;
+    setDepsFixRunning(true);
+    setDepsFixMsg("正在修复依赖，请耐心等待（首次修复需要下载工具链，可能需要较长时间）…");
+    setDepsFixLog("");
+    try {
+      const r = await hs.depsFix();
+      if (r.partial && r.depsResults) {
+        setDepsFixMsg(
+          `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
+        );
+      } else if (r.ok) {
+        setDepsFixMsg("依赖修复完成，正在重新检测 …");
+      } else {
+        setDepsFixMsg(
+          "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
+        );
+      }
+    } finally {
+      depsFixRunningRef.current = false;
+      setDepsFixRunning(false);
+      // 修复完成后刷新共享检测结果（切页后回来也能看到最新状态）
+      await runDepsCheck();
+    }
+  }, [runDepsCheck]);
+
   const saveSkills = useCallback(
     async (disabled: string[]) => {
       const res = await hs.saveSkills(disabled);
@@ -309,6 +357,7 @@ export function App() {
       aria-label={label}
       title={label}
       onClick={() => {
+        setWizardTarget(null);
         setView(id);
         setJitterId(id);
         window.setTimeout(() => setJitterId((cur) => (cur === id ? null : cur)), 220);
@@ -368,6 +417,14 @@ export function App() {
                     onSeepInstall={() => runSeep("install")}
                     onSeepVerify={() => runSeep("verify")}
                     onSeepUninstall={() => runSeep("uninstall")}
+                    deps={depsResult?.deps ?? null}
+                    depsError={depsResult && !depsResult.ok ? depsResult.error || "" : ""}
+                    depsBusy={depsChecking}
+                    depsMsg={depsFixMsg}
+                    fixLog={depsFixLog}
+                    fixing={depsFixRunning}
+                    onDepsCheck={runDepsCheck}
+                    onDepsFix={runDepsFix}
                   />
                 )}
 
@@ -399,7 +456,17 @@ export function App() {
                   />
                 )}
 
-                {view === "diag" && <DiagnosticsPage />}
+                {view === "diag" && (
+                  <DiagnosticsPage
+                    depsResult={depsResult}
+                    checking={depsChecking}
+                    fixing={depsFixRunning}
+                    fixMsg={depsFixMsg}
+                    fixLog={depsFixLog}
+                    onCheck={runDepsCheck}
+                    onFix={runDepsFix}
+                  />
+                )}
               </>
             )}
           </div>

@@ -101,10 +101,25 @@ function Test-DebugPort {
 }
 
 function Start-DoubaoDebug([string]$Exe) {
-    # app\Doubao.exe 是真正的 Chromium 主体；根目录那个是启动器，调试参数要交给 app 下的
-    $appExe = Join-Path (Split-Path -Parent $Exe) 'app\Doubao.exe'
-    if (-not (Test-Path -LiteralPath $appExe)) { $appExe = $Exe }
-    Start-Process -FilePath $appExe -ArgumentList "--remote-debugging-port=$Port" | Out-Null
+    # app\Doubao.exe 是真正的 Chromium 主体；根目录那个是启动器，调试参数要交给 app 下的。
+    # $Exe 本身已指向 app 下时别再拼，避免出现 app\app\Doubao.exe。
+    $appExe = $Exe
+    if ($Exe -notlike '*\app\Doubao.exe') {
+        $candidate = Join-Path (Split-Path -Parent $Exe) 'app\Doubao.exe'
+        if (Test-Path -LiteralPath $candidate) { $appExe = $candidate }
+    }
+    # Chromium 136+：使用默认 user-data-dir 时 --remote-debugging-port 会被静默忽略。
+    # 必须给一个专用、持久化的调试 Profile，端口才会真正打开。登录态存在该 Profile，
+    # 第一次扫码登录一次后，后续注入复用同一个登录，不用每次重扫。
+    $profile = Join-Path $env:USERPROFILE '.doubao\cdp-profile'
+    if (-not (Test-Path -LiteralPath $profile)) { New-Item -ItemType Directory -Path $profile -Force | Out-Null }
+    $argList = @(
+        "--remote-debugging-port=$Port",
+        ('--user-data-dir="{0}"' -f $profile),
+        "--no-first-run",
+        "--no-default-browser-check"
+    )
+    Start-Process -FilePath $appExe -ArgumentList $argList | Out-Null
     for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 500
         if (Test-DebugPort) { return $true }
@@ -241,13 +256,15 @@ if (-not (Test-DebugPort)) {
         Write-Log "Abort: Doubao.exe not found"
         exit 1
     }
-    Write-Host "  [i] 启动豆包（调试模式）..." -ForegroundColor Yellow
+    Write-Host "  [i] 启动豆包（调试模式，专用调试 Profile）..." -ForegroundColor Yellow
     if (-not (Start-DoubaoDebug $exe)) {
         Write-Host "  [×] 豆包已启动，但调试端口 $Port 仍然不通。" -ForegroundColor Red
-        Write-Host "      如果豆包界面停在登录页，先登录然后重试。" -ForegroundColor Yellow
+        Write-Host "      第一次会打开一个全新的调试窗口：请扫码登录一次（和主账号同一个即可）。" -ForegroundColor Yellow
+        Write-Host "      登录后回到界面重新点一次安装；之后会复用这个登录，不再需要重扫。" -ForegroundColor Yellow
         Write-Log "Abort: debug port $Port still closed after launch"
         exit 1
     }
+    Write-Host "  [i] 首次使用请在调试窗口里扫码登录（云端记忆绑定账号，登录同账号即生效）。" -ForegroundColor DarkGray
 }
 
 $target = Wait-DoubaoTarget 60

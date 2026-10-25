@@ -3,45 +3,22 @@ import { hs, type DepsResult } from "../lib/hs";
 import { cx } from "../lib/cx";
 import { LogView } from "../components/LogView";
 
-/** 系统诊断：依赖检测/修复（功能5）+ 故障诊断报告（功能7）。 */
-export function DiagnosticsPage() {
-  const [deps, setDeps] = useState<DepsResult | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [fixing, setFixing] = useState(false);
-  const [fixMsg, setFixMsg] = useState("");
-  const [fixLog, setFixLog] = useState("");
+type Props = {
+  depsResult: DepsResult | null;
+  checking: boolean;
+  fixing: boolean;
+  fixMsg: string;
+  fixLog: string;
+  onCheck: () => void;
+  onFix: () => void;
+};
+
+/** 系统诊断：依赖检测/修复（功能5）+ 故障诊断报告（功能7）。
+ *  依赖检测/修复的状态由 App 持有，切页后仍保留，后台修复进程继续时 UI 不丢。 */
+export function DiagnosticsPage({ depsResult, checking, fixing, fixMsg, fixLog, onCheck, onFix }: Props) {
   const [report, setReport] = useState("");
   const [reporting, setReporting] = useState(false);
-
-  const runCheck = async () => {
-    setChecking(true);
-    setFixMsg("");
-    const r = await hs.depsCheck();
-    setDeps(r);
-    setChecking(false);
-  };
-
-  const runFix = async () => {
-    if (fixing) return;
-    setFixing(true);
-    setFixMsg("");
-    setFixLog("");
-    const off = hs.onLog((p) => setFixLog((prev) => (prev + p.text).slice(-20000)));
-    try {
-      const r = await hs.depsFix();
-      if (r.partial && r.depsResults) {
-        setFixMsg(
-          `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
-        );
-      } else {
-        setFixMsg(r.ok ? "修复完成：工具链已补齐。" : "修复失败：" + (r.error || r.out || "退出码 " + r.code));
-      }
-    } finally {
-      off();
-      setFixing(false);
-      runCheck();
-    }
-  };
+  const [copyMsg, setCopyMsg] = useState("");
 
   const runDiagnose = async () => {
     setReporting(true);
@@ -53,9 +30,9 @@ export function DiagnosticsPage() {
   const copyReport = async () => {
     try {
       await navigator.clipboard.writeText(report);
-      setFixMsg("诊断报告已复制到剪贴板");
+      setCopyMsg("诊断报告已复制到剪贴板");
     } catch {
-      setFixMsg("复制失败，请手动全选复制");
+      setCopyMsg("复制失败，请手动全选复制");
     }
   };
 
@@ -71,10 +48,10 @@ export function DiagnosticsPage() {
           </p>
         </div>
         <div className="app-inline-actions">
-          <button type="button" className="btn btn-primary" onClick={runCheck} disabled={checking}>
+          <button type="button" className="btn btn-primary" onClick={onCheck} disabled={checking || fixing}>
             {checking ? "检测中…" : "开始检测"}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={runFix} disabled={fixing || !deps}>
+          <button type="button" className="btn btn-secondary" onClick={onFix} disabled={fixing || !depsResult}>
             {fixing ? "修复中…" : "一键修复缺失依赖"}
           </button>
         </div>
@@ -84,14 +61,14 @@ export function DiagnosticsPage() {
             <LogView text={fixLog} />
           </div>
         )}
-        {deps && !deps.ok && (
+        {depsResult && !depsResult.ok && (
           <p className="settings-card-description" style={{ color: "var(--ds-text-danger, #c0392b)" }}>
-            {deps.error}
+            {depsResult.error}
           </p>
         )}
-        {deps && deps.ok && (
+        {depsResult && depsResult.ok && (
           <div className="settings-panel">
-            {deps.deps.map((d) => (
+            {depsResult.deps.map((d) => (
               <div key={d.name} className="settings-row">
                 <span className="settings-row-copy">
                   <div className="settings-row-title">{d.name}</div>
@@ -125,6 +102,7 @@ export function DiagnosticsPage() {
             </button>
           )}
         </div>
+        {copyMsg && <p className="settings-card-description">{copyMsg}</p>}
         {report && (
           <pre
             style={{
