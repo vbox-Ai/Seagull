@@ -652,4 +652,15 @@ $__t2=[DateTime]::Now
 $stateJson = $state | ConvertTo-Json -Depth 5
 Write-Host ("[TIME] 状态写入: " + [int](([DateTime]::Now-$__t2).TotalMilliseconds) + " ms")
 Write-Utf8NoBom $statePath $stateJson
+
+# 注入收尾提醒：DSH 只在启动时读 ~/.dsh/AGENTS.md，且存在多实例抢 7789 端口
+# 导致新实例起不来的问题。这里把两个坑都点出来，界面日志能直接看到。
+$dshProcCount = @(Get-Process 'DeepSeek Harness' -ErrorAction SilentlyContinue).Count
+if ($dshProcCount -gt 1) {
+    Write-Host "警告：检测到 $dshProcCount 个 DeepSeek Harness 进程。多个实例会抢 127.0.0.1:7789 端口导致卡死，请全部关闭后只启动一个。"
+} elseif ($dshProcCount -eq 1) {
+    Write-Host "提示：DeepSeek Harness 正在运行。注入的 AGENTS.md 只在启动时读取，请重启 DSH（或点界面的「重启 DSH」）后再开新对话。"
+} else {
+    Write-Host "提示：注入完成。下次启动 DeepSeek Harness 时会加载全局记忆 ~/.dsh/AGENTS.md。"
+}
 Write-Host "DSH injection complete"

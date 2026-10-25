@@ -961,11 +961,35 @@ function selectPromptFile(name) {
 // ---------- 功能5：依赖检测/修复 ----------
 
 function checkDeps() {
+  // 内置工具目录优先：repair 下载到 Tool\mcp\Tool\safe，且 PATH 变更对已运行的
+  // Electron 进程不生效，只查 PATH 会让「刚修复完」仍显示未安装。
+  const safeDir = p(SEEP_KIT, "Tool", "mcp", "Tool", "safe").replace(/'/g, "''");
   const cmd =
     "$ErrorActionPreference='SilentlyContinue'; " +
+    "$safe = '" + safeDir + "'; " +
+    "$bundled = @{ " +
+    "  'jadx'    = (Join-Path $safe 'jadx\\bin\\jadx.bat'); " +
+    "  'radare2' = (Join-Path $safe 'radare2\\bin\\radare2.exe'); " +
+    "  'r2'      = (Join-Path $safe 'radare2\\bin\\radare2.exe'); " +
+    "  'apktool' = (Join-Path $safe 'apktool\\apktool.bat'); " +
+    "  '7z'      = (Join-Path $safe '7zip\\7z.exe'); " +
+    "  '7za'     = (Join-Path $safe '7zip\\7z.exe'); " +
+    "}; " +
     "$names = @('python','python3','nmap','radare2','r2','jadx','frida','git','7z','7za'); " +
-    "$out = foreach($n in $names){ $r = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1; " +
-    "if($r){ [PSCustomObject]@{ name=$n; ok=$true; path=$r.Source } } else { [PSCustomObject]@{ name=$n; ok=$false; path='' } } }; " +
+    "$out = foreach($n in $names){ " +
+    "  $path = ''; $ok = $false; $hint = ''; " +
+    "  if ($bundled.ContainsKey($n) -and (Test-Path -LiteralPath $bundled[$n])) { $path = $bundled[$n]; $ok = $true } " +
+    "  if (-not $ok -and ($n -eq 'python' -or $n -eq 'python3')) { " +
+    "    $r = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1; " +
+    "    if ($r -and $r.Source -match 'WindowsApps') { $path = $r.Source; $hint = 'WindowsApps 占位符，请装官方 Python 或关闭应用执行别名' } " +
+    "    elseif ($r) { $path = $r.Source; $ok = $true } " +
+    "  } " +
+    "  if (-not $ok -and -not $hint) { " +
+    "    $r = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1; " +
+    "    if ($r) { $path = $r.Source; $ok = $true } " +
+    "  } " +
+    "  [PSCustomObject]@{ name=$n; ok=$ok; path=$path; hint=$hint } " +
+    "}; " +
     "@($out) | ConvertTo-Json -Compress";
   return new Promise((resolve) => {
     const ps = spawn("powershell.exe", ["-NoProfile", "-Command", cmd], { windowsHide: true });
@@ -996,7 +1020,23 @@ function fixDeps() {
   }
   // repair-tools.ps1 只声明了 -Only / -Force，没有 -NonInteractive；之前传它导致
   // NamedParameterNotFound。直接 -Force 全量修复即可。
-  return runPowerShell(["-File", script, "-Force"], "修复逆向工具链", SEEP_TIMEOUT);
+  return runPowerShell(["-File", script, "-Force"], "修复逆向工具链", SEEP_TIMEOUT).then((res) => {
+    // 解析脚本末尾的 RESULT_JSON=...：部分成功时整体不算失败，前端分项展示
+    let results = null;
+    try {
+      const m = (res.out || "").match(/RESULT_JSON=(\{.*\})/);
+      if (m) results = JSON.parse(m[1]);
+    } catch { /* 解析不到就退回退出码判断 */ }
+    if (results) {
+      return {
+        ...res,
+        ok: results.ok.length > 0 || results.failed.length === 0,
+        partial: results.partial,
+        depsResults: results,
+      };
+    }
+    return res;
+  });
 }
 
 // ---------- 功能4：引擎管理（双引擎） ----------
@@ -1420,6 +1460,51 @@ function registerIpc() {
           out: text,
           // 没找到 AppID 时给一句能看懂的话，而不是把失败也报成「重启指令已发送」
           error: launched ? undefined : text || "未找到 Codex 应用（Get-StartApps 无 OpenAI.Codex* 条目）",
+        });
+      });
+      ps.on("error", (e) => resolve({ ok: false, code: -1, out, error: String(e && e.message) }));
+    });
+  });
+
+  /**
+     重启 DeepSeek Harness：先杀光所有实例（含占着 7789 端口的僵尸进程），
+     再重新拉起。DSH 的全局记忆 ~/.dsh/AGENTS.md 只在启动时读一次，
+     注入/还原后必须重启 DSH 才会生效 —— 这也是「注入进了但模型不执行」的根因。
+  */
+  ipcMain.handle("tool:restartDsh", async () => {
+    const cmd =
+      "$ErrorActionPreference = 'SilentlyContinue'; " +
+      "$procs = @(Get-Process 'DeepSeek Harness' -ErrorAction SilentlyContinue); " +
+      "if ($procs.Count -gt 0) { $procs | Stop-Process -Force }; " +
+      "Start-Sleep -Milliseconds 1500; " +
+      "$cands = @(" +
+      "  (Join-Path $env:LOCALAPPDATA 'Programs\\DeepSeek Harness\\DeepSeek Harness.exe')," +
+      "  (Join-Path $env:ProgramFiles 'DeepSeek Harness\\DeepSeek Harness.exe')," +
+      "  (Join-Path ${env:ProgramFiles(x86)} 'DeepSeek Harness\\DeepSeek Harness.exe')" +
+      "); " +
+      "$exe = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1; " +
+      "if (-not $exe) { Write-Output 'no-exe'; exit 0 }; " +
+      "Start-Process -FilePath $exe; " +
+      "for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Milliseconds 500; if (@(Get-Process 'DeepSeek Harness').Count -gt 0) { break } }; " +
+      "Write-Output ('launched:' + $exe + ' procs:' + @(Get-Process 'DeepSeek Harness').Count)";
+    return new Promise((resolve) => {
+      const ps = spawn("powershell.exe", ["-NoProfile", "-Command", cmd], { windowsHide: true });
+      let out = "";
+      let raw = Buffer.alloc(0);
+      const onChunk = (buf) => {
+        raw = Buffer.concat([raw, buf]);
+        out = decodeConsoleOutput(raw);
+      };
+      ps.stdout.on("data", onChunk);
+      ps.stderr.on("data", onChunk);
+      ps.on("close", (code) => {
+        const text = out.trim();
+        const launched = /^launched:/m.test(text);
+        resolve({
+          ok: code === 0 && launched,
+          code: code == null ? -1 : code,
+          out: text,
+          error: launched ? undefined : text || "未找到 DeepSeek Harness 可执行文件",
         });
       });
       ps.on("error", (e) => resolve({ ok: false, code: -1, out, error: String(e && e.message) }));

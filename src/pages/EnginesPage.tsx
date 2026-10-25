@@ -86,11 +86,17 @@ export function EnginesPage({
     const off = hs.onLog((p) => setFixLog((prev) => (prev + p.text).slice(-20000)));
     try {
       const r = await hs.depsFix();
-      setDepsMsg(
-        r.ok
-          ? "依赖修复完成，正在重新检测 …"
-          : "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
-      );
+      if (r.partial && r.depsResults) {
+        setDepsMsg(
+          `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
+        );
+      } else if (r.ok) {
+        setDepsMsg("依赖修复完成，正在重新检测 …");
+      } else {
+        setDepsMsg(
+          "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
+        );
+      }
     } finally {
       off();
       setFixing(false);
@@ -183,7 +189,7 @@ export function EnginesPage({
           </button>
         </div>
         {depsMsg && <p className="settings-card-description">{depsMsg}</p>}
-        {fixing && fixLog && (
+        {fixLog && (
           <div className="panel-card" style={{ padding: "12px 14px", marginTop: 10 }}>
             <LogView text={fixLog} />
           </div>
@@ -196,7 +202,9 @@ export function EnginesPage({
                 <span className="settings-row-title" style={{ minWidth: 90 }}>
                   {d.name}
                 </span>
-                <span className="settings-row-desc">{d.ok ? d.path : "未安装"}</span>
+                <span className="settings-row-desc">
+                  {d.ok ? d.path : d.hint || "未安装"}
+                </span>
               </div>
             ))}
           </div>

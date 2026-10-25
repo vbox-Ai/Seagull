@@ -9,6 +9,9 @@ export type InstallResult = {
   timedOut: boolean;
   installed: InstalledMap;
   error?: string;
+  /** 依赖修复的分项结果（有值说明走了 repair-tools.ps1 的 RESULT_JSON）。 */
+  partial?: boolean;
+  depsResults?: { ok: string[]; failed: string[]; partial: boolean };
 };
 
 /** 重启 Codex：out 是 PowerShell 的原样输出，失败时 error 里带可读原因。 */
@@ -56,7 +59,7 @@ export type HistoryEntry = {
 export type PromptFile = { name: string; chars: number; current: boolean };
 
 // ---- 功能5：依赖检测 ----
-export type Dep = { name: string; ok: boolean; path: string };
+export type Dep = { name: string; ok: boolean; path: string; hint?: string };
 export type DepsResult = { ok: boolean; deps: Dep[]; error?: string };
 
 // ---- 功能4：引擎管理 ----
@@ -126,6 +129,7 @@ export type HsApi = {
   /** 装回原始记忆（仅 WorkBuddy）：还原安装前的记忆档案，保留技能库。 */
   restoreMemory(targetId: string): Promise<InstallResult>;
   restartCodex(): Promise<RestartResult>;
+  restartDsh(): Promise<RestartResult>;
   seepState(): Promise<SeepState>;
   seepInstall(): Promise<InstallResult>;
   seepUninstall(): Promise<InstallResult>;

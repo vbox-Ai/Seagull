@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { hs, type DepsResult } from "../lib/hs";
 import { cx } from "../lib/cx";
+import { LogView } from "../components/LogView";
 
 /** 系统诊断：依赖检测/修复（功能5）+ 故障诊断报告（功能7）。 */
 export function DiagnosticsPage() {
@@ -8,6 +9,7 @@ export function DiagnosticsPage() {
   const [checking, setChecking] = useState(false);
   const [fixing, setFixing] = useState(false);
   const [fixMsg, setFixMsg] = useState("");
+  const [fixLog, setFixLog] = useState("");
   const [report, setReport] = useState("");
   const [reporting, setReporting] = useState(false);
 
@@ -20,12 +22,25 @@ export function DiagnosticsPage() {
   };
 
   const runFix = async () => {
+    if (fixing) return;
     setFixing(true);
     setFixMsg("");
-    const r = await hs.depsFix();
-    setFixMsg(r.ok ? "修复完成：工具链已补齐。" : "修复失败：" + (r.error || r.out || "退出码 " + r.code));
-    setFixing(false);
-    runCheck();
+    setFixLog("");
+    const off = hs.onLog((p) => setFixLog((prev) => (prev + p.text).slice(-20000)));
+    try {
+      const r = await hs.depsFix();
+      if (r.partial && r.depsResults) {
+        setFixMsg(
+          `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
+        );
+      } else {
+        setFixMsg(r.ok ? "修复完成：工具链已补齐。" : "修复失败：" + (r.error || r.out || "退出码 " + r.code));
+      }
+    } finally {
+      off();
+      setFixing(false);
+      runCheck();
+    }
   };
 
   const runDiagnose = async () => {
@@ -64,6 +79,11 @@ export function DiagnosticsPage() {
           </button>
         </div>
         {fixMsg && <p className="settings-card-description">{fixMsg}</p>}
+        {fixLog && (
+          <div className="panel-card" style={{ padding: "12px 14px", marginTop: 10 }}>
+            <LogView text={fixLog} />
+          </div>
+        )}
         {deps && !deps.ok && (
           <p className="settings-card-description" style={{ color: "var(--ds-text-danger, #c0392b)" }}>
             {deps.error}
@@ -75,7 +95,9 @@ export function DiagnosticsPage() {
               <div key={d.name} className="settings-row">
                 <span className="settings-row-copy">
                   <div className="settings-row-title">{d.name}</div>
-                  <div className="settings-row-desc">{d.ok ? d.path : "未安装"}</div>
+                  <div className="settings-row-desc">
+                    {d.ok ? d.path : d.hint || "未安装"}
+                  </div>
                 </span>
                 <span className="settings-row-control">
                   <span className={cx("badge", d.ok ? "badge-success" : "badge-error")}>

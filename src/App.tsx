@@ -240,6 +240,23 @@ export function App() {
     }
   }, []);
 
+  const runRestartDsh = useCallback(async () => {
+    setStatus("正在重启 DeepSeek Harness …");
+    setLevel("busy");
+    setBusy(true);
+    const res = await hs.restartDsh();
+    if (res.ok) {
+      setStatus("DeepSeek Harness 已重启 · 全局记忆已重新加载");
+      setLevel("ok");
+      setToastLevel("success");
+      setToast("DSH 已重启，注入的提示词现在生效");
+    } else {
+      setStatus("DSH 重启失败：" + (res.error || "未知错误"));
+      setLevel("err");
+    }
+    setBusy(false);
+  }, []);
+
   const saveSkills = useCallback(
     async (disabled: string[]) => {
       const res = await hs.saveSkills(disabled);
@@ -320,6 +337,7 @@ export function App() {
                 logText={logText}
                 onInstall={() => runInstall(currentTarget.id)}
                 onRestore={() => runRestoreMemory(currentTarget.id)}
+                onRestartDsh={runRestartDsh}
                 onBack={() => {
                   setWizardTarget(null);
                   setView("home");

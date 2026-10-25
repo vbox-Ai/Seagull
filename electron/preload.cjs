@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("hs", {
   // 装回原始记忆：还原安装前的记忆档案，保留技能库（仅 WorkBuddy）
   restoreMemory: (targetId) => ipcRenderer.invoke("tool:restoreMemory", targetId),
   restartCodex: () => ipcRenderer.invoke("tool:restartCodex"),
+  restartDsh: () => ipcRenderer.invoke("tool:restartDsh"),
   // 随包分发的 Seep 逆向工作台
   seepState: () => ipcRenderer.invoke("seep:state"),
   seepInstall: () => ipcRenderer.invoke("seep:install"),

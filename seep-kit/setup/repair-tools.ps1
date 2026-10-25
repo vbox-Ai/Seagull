@@ -29,7 +29,8 @@ function Write-Ok($m)   { Write-Host "    [OK] $m" -ForegroundColor Green }
 function Write-Warn($m) { Write-Host "    [!!] $m" -ForegroundColor Yellow }
 function Write-Info($m) { Write-Host "    [..] $m" -ForegroundColor Gray }
 
-# 带镜像回退的下载
+# 带镜像回退的下载：用 .NET HttpWebRequest 流式读，每 500ms 刷一行进度。
+# Invoke-WebRequest -OutFile 是整文件下载，过程静默，界面看着像卡死。
 function Get-FileWithMirror {
     param([string]$Url, [string]$OutFile)
     foreach ($m in $Mirrors) {
@@ -37,14 +38,39 @@ function Get-FileWithMirror {
         $tag = if ($m -eq '') { 'official' } else { $m.TrimEnd('/') }
         try {
             Write-Info "尝试 $tag ..."
-            $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $u -OutFile $OutFile -TimeoutSec 120 -UseBasicParsing
+            $req = [System.Net.HttpWebRequest]::Create($u)
+            $req.UserAgent = 'seep-setup'
+            $req.Timeout = 120000
+            $req.ReadWriteTimeout = 120000
+            $resp = $req.GetResponse()
+            $total = $resp.ContentLength
+            $src = $resp.GetResponseStream()
+            $dst = [System.IO.File]::Create($OutFile)
+            $buf = New-Object byte[] 65536
+            $read = 0
+            $lastTick = [DateTime]::Now
+            while (($n = $src.Read($buf, 0, $buf.Length)) -gt 0) {
+                $dst.Write($buf, 0, $n)
+                $read += $n
+                if (([DateTime]::Now - $lastTick).TotalMilliseconds -ge 500) {
+                    $lastTick = [DateTime]::Now
+                    if ($total -gt 0) {
+                        $pct = [int]($read * 100 / $total)
+                        Write-Info ("下载进度 {0}% ({1:N1} / {2:N1} MB)" -f $pct, ($read/1MB), ($total/1MB))
+                    } else {
+                        Write-Info ("下载中 ... {0:N1} MB" -f ($read/1MB))
+                    }
+                }
+            }
+            $dst.Close(); $src.Close(); $resp.Close()
             if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt 1024) {
                 Write-Ok "下载成功 ($tag)"
                 return $true
             }
         } catch {
             Write-Info "失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            # 半成品文件别留：下次重试或下一个镜像直接覆盖
+            if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
         }
     }
     return $false
@@ -141,9 +167,105 @@ if "%JAVA_HOME%"=="" (set JAVA=java) else (set JAVA="%JAVA_HOME%\bin\java.exe")
     }
 }
 
+# ---------------------------------------------------------------- 7z / 7za
+if (Should-Run '7z') {
+    Write-Host "`n  [4/10] 7-Zip (解包)" -ForegroundColor Cyan
+    $dst = Join-Path $ToolsDir '7zip'
+    if ((Test-Path (Join-Path $dst '7z.exe')) -and -not $Force) { Write-Ok '已存在，跳过'; $results['7z'] = $true }
+    else {
+        try {
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if ($winget) {
+                Write-Info 'winget install 7zip.7zip ...'
+                & winget install --id 7zip.7zip --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            }
+            $exe = @(
+                (Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'),
+                (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\7-Zip\7z.exe')
+            ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($exe) {
+                New-Item -ItemType Directory -Force -Path $dst | Out-Null
+                Copy-Item $exe (Join-Path $dst '7z.exe') -Force
+                Write-Ok '7z 已就位（winget 安装，拷入 tools\7zip）'
+                $results['7z'] = $true
+            } else {
+                Write-Warn '7z 未安装成功（winget 不可用或安装失败，可手动装 7-Zip）'
+                $results['7z'] = $false
+            }
+        } catch {
+            Write-Warn "7z 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['7z'] = $false
+        }
+    }
+}
+
+# ---------------------------------------------------------------- git
+if (Should-Run 'git') {
+    Write-Host "`n  [5/10] git (版本控制)" -ForegroundColor Cyan
+    if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok '已存在，跳过'; $results['git'] = $true }
+    else {
+        try {
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if (-not $winget) { throw 'winget 不可用' }
+            Write-Info 'winget install Git.Git ...'
+            & winget install --id Git.Git --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok 'git 安装完成'; $results['git'] = $true }
+            else { Write-Warn 'git 已装但当前 shell 未刷新 PATH（新开终端即可用）'; $results['git'] = $true }
+        } catch {
+            Write-Warn "git 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['git'] = $false
+        }
+    }
+}
+
+# ---------------------------------------------------------------- frida
+if (Should-Run 'frida') {
+    Write-Host "`n  [6/10] frida (动态插桩)" -ForegroundColor Cyan
+    if (Get-Command frida -ErrorAction SilentlyContinue) { Write-Ok '已存在，跳过'; $results['frida'] = $true }
+    else {
+        try {
+            $py = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $py) { throw '未找到 python，先装 Python 再装 frida' }
+            Write-Info 'pip install frida-tools ...'
+            & python -m pip install --quiet frida-tools 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { Write-Ok 'frida-tools 安装完成'; $results['frida'] = $true }
+            else { Write-Warn 'frida-tools 安装失败'; $results['frida'] = $false }
+        } catch {
+            Write-Warn "frida 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['frida'] = $false
+        }
+    }
+}
+
+# ---------------------------------------------------------------- python
+if (Should-Run 'python') {
+    Write-Host "`n  [7/10] Python (脚本运行时)" -ForegroundColor Cyan
+    $py = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
+    # WindowsApps\python.exe 是 Store 占位 stub，一执行就弹商店，不算真 Python
+    if ($py -and $py.Source -match 'WindowsApps') {
+        Write-Warn '检测到 WindowsApps python.exe 占位符（非真 Python），走安装流程'
+        $py = $null
+    }
+    if ($py) { Write-Ok '已存在，跳过'; $results['python'] = $true }
+    else {
+        try {
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if (-not $winget) { throw 'winget 不可用' }
+            Write-Info 'winget install Python.Python.3.12 ...'
+            & winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            Write-Warn 'Python 已发起安装；新 PATH 只对新终端生效，重开终端/应用后 python 才可用'
+            $results['python'] = $true
+        } catch {
+            Write-Warn "python 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['python'] = $false
+        }
+    }
+}
+
 # ---------------------------------------------------------------- playwright-mcp
 if (Should-Run 'playwright-mcp') {
-    Write-Host "`n  [4/6] playwright-mcp (浏览器自动化)" -ForegroundColor Cyan
+    Write-Host "`n  [8/10] playwright-mcp (浏览器自动化)" -ForegroundColor Cyan
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
         Write-Warn '未找到 npm，跳过'; $results['playwright-mcp'] = $false
     } else {
@@ -164,7 +286,7 @@ if (Should-Run 'playwright-mcp') {
 
 # ---------------------------------------------------------------- js-reverse-mcp
 if (Should-Run 'js-reverse-mcp') {
-    Write-Host "`n  [5/6] js-reverse-mcp (JS 逆向)" -ForegroundColor Cyan
+    Write-Host "`n  [9/10] js-reverse-mcp (JS 逆向)" -ForegroundColor Cyan
     # 官方推荐 npx 免安装方式：无需下载，仅在 mcp.json 注册即可
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
         Write-Warn '未找到 npm，跳过（js-reverse-mcp 依赖 npx）'
@@ -180,7 +302,7 @@ if (Should-Run 'js-reverse-mcp') {
 
 # ---------------------------------------------------------------- ida-pro-mcp
 if (Should-Run 'ida-pro-mcp') {
-    Write-Host "`n  [6/6] ida-pro-mcp (IDA 桥接)" -ForegroundColor Cyan
+    Write-Host "`n  [10/10] ida-pro-mcp (IDA 桥接)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir 'ida-pro-mcp'
     if ((Test-Path $dst) -and -not $Force) { Write-Ok '已存在，跳过'; $results['ida-pro-mcp'] = $true }
     else {
@@ -198,7 +320,7 @@ if (Should-Run 'ida-pro-mcp') {
 # ---------------------------------------------------------------- PATH
 Write-Host "`n  [PATH] 加入工具目录" -ForegroundColor Cyan
 $addPaths = @()
-foreach ($p in @('radare2', 'jadx\bin', 'apktool')) {
+foreach ($p in @('radare2\bin', 'jadx\bin', 'apktool')) {
     $full = Join-Path $ToolsDir $p
     if (Test-Path $full) { $addPaths += $full }
 }
@@ -224,9 +346,22 @@ foreach ($k in $results.Keys | Sort-Object) {
 }
 
 $failed = @($results.Keys | Where-Object { $results[$_] -eq $false })
+$ok = @($results.Keys | Where-Object { $results[$_] -eq $true })
 if ($failed.Count -gt 0) {
     Write-Host "`n    失败项: $($failed -join ', ')" -ForegroundColor Yellow
     Write-Host '    可重跑本脚本，或按 MANUAL\PREREQUISITES.md 手动下载' -ForegroundColor Yellow
+}
+
+# 机器可读结果：主进程解析这一行做分项展示，别再拿「退出码」一刀切。
+# 部分成功时退出码 0（有收获就不算致命），全部失败才 1。
+$resultJson = @{
+    ok      = @($ok | Sort-Object)
+    failed  = @($failed | Sort-Object)
+    partial = ($failed.Count -gt 0 -and $ok.Count -gt 0)
+} | ConvertTo-Json -Compress
+Write-Host ("RESULT_JSON=" + $resultJson)
+
+if ($ok.Count -eq 0 -and $results.Count -gt 0) {
     exit 1
 }
 exit 0

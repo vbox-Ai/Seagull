@@ -19,6 +19,7 @@ type Props = {
   logText: string;
   onInstall: () => void;
   onRestore: () => void;
+  onRestartDsh: () => void;
   onBack: () => void;
   onManagePrompts: () => void;
 };
@@ -39,12 +40,14 @@ export function Wizard({
   logText,
   onInstall,
   onRestore,
+  onRestartDsh,
   onBack,
   onManagePrompts,
 }: Props) {
   const [step, setStep] = useState(0);
   const [useSeep, setUseSeep] = useState(true);
   const [useRea, setUseRea] = useState(false);
+  const isDsh = target.id === "dsh";
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const prev = () => (step === 0 ? onBack() : setStep((s) => s - 1));
@@ -77,6 +80,11 @@ export function Wizard({
               <div className="sg-engine-desc">确认目标平台无误后进入下一步</div>
             </div>
           </div>
+          {isDsh && (
+            <div className="sg-hint" style={{ marginBottom: 10 }}>
+              DSH 只在启动时读取 ~/.dsh/AGENTS.md。注入或还原后，点「重启 DSH」让改动真正生效。
+            </div>
+          )}
           <div className="sg-wizard-actions">
             <button type="button" className="btn btn-ghost" onClick={onBack}>
               返回首页
@@ -84,6 +92,11 @@ export function Wizard({
             <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestore}>
               还原恢复
             </button>
+            {isDsh && (
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestartDsh}>
+                {busy ? "执行中 …" : "重启 DSH"}
+              </button>
+            )}
             <button type="button" className="btn btn-primary" onClick={next}>
               下一步
             </button>
@@ -206,25 +219,32 @@ export function Wizard({
             <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestore}>
               {busy ? "执行中 …" : "还原恢复"}
             </button>
+            {isDsh && (
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRestartDsh}>
+                {busy ? "执行中 …" : "重启 DSH"}
+              </button>
+            )}
             <button type="button" className="btn btn-primary" disabled={busy} onClick={onInstall}>
               {busy ? "执行中 …" : "开始注入"}
             </button>
           </div>
-          {(status || logText) && (
-            <div className="settings-card-block" style={{ marginTop: 16 }}>
-              <div className="settings-card-heading-row">
-                <p className="settings-card-description">
-                  {status}
-                  {level === "err" ? "（详见下方日志）" : ""}
-                </p>
-              </div>
-              {logText ? (
-                <div className="panel-card" style={{ padding: "12px 14px" }}>
-                  <LogView text={logText} />
-                </div>
-              ) : null}
+        </div>
+      )}
+
+      {/* 状态与日志在所有步骤都可见：还原/重启按钮在第一步就有，不能点完没反馈 */}
+      {(status || logText) && (
+        <div className="settings-card-block" style={{ marginTop: 16 }}>
+          <div className="settings-card-heading-row">
+            <p className="settings-card-description">
+              {status}
+              {level === "err" ? "（详见下方日志）" : ""}
+            </p>
+          </div>
+          {logText ? (
+            <div className="panel-card" style={{ padding: "12px 14px" }}>
+              <LogView text={logText} />
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>
