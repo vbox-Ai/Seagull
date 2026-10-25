@@ -593,6 +593,71 @@ function Get-WBCliDistDir {
     param([Parameter(Mandatory)][string]$WBRoot)
     return (Join-Path $WBRoot 'resources\app.asar.unpacked\cli\dist')
 }
+
+# 纯 PowerShell 解析 Electron app.asar 头（不依赖 node / npx，彻底避开本会话被 WorkBuddy
+# 注入的 NODE_OPTIONS / ELECTRON_RUN_AS_NODE 环境污染）。asar 头格式（@electron/asar）：
+#   偏移 0  ：8 字节 size pickle —— 其中偏移 4 的 UInt32LE = 头 buffer 长度
+#   偏移 8  ：头 buffer —— 其中偏移 0 的 UInt32LE = JSON 字符串长度，随后是 JSON 正文
+function Read-AsarHeader([Parameter(Mandatory)][string]$AsarPath) {
+    if (-not (Test-Path -LiteralPath $AsarPath)) { return $null }
+    $fs = [System.IO.File]::OpenRead($AsarPath)
+    try {
+        $sizeBuf = New-Object byte[] 8
+        if ($fs.Read($sizeBuf, 0, 8) -ne 8) { return $null }
+        $headerBufLen = [BitConverter]::ToUInt32($sizeBuf, 4)
+        if ($headerBufLen -le 0 -or $headerBufLen -gt 256MB) { return $null }
+        $headerBuf = New-Object byte[] $headerBufLen
+        if ($fs.Read($headerBuf, 0, $headerBufLen) -ne $headerBufLen) { return $null }
+        # 头 buffer 本身也是一个 Pickle：偏移 4 才是 JSON 字符串字节长，正文从偏移 8 开始
+        $jsonLen = [BitConverter]::ToUInt32($headerBuf, 4)
+        if ($jsonLen -le 0 -or $jsonLen -gt $headerBufLen) { return $null }
+        $json = [System.Text.Encoding]::UTF8.GetString($headerBuf, 8, [int]$jsonLen)
+        return ($json | ConvertFrom-Json)
+    } catch {
+        Write-Log "Read-AsarHeader 失败: $AsarPath"
+        return $null
+    } finally { $fs.Close() }
+}
+
+# 诊断国际版 app.asar 里 cli/dist 的真实形态：
+#   - 头部把 cli/dist 标成 unpacked=true 且侧车(app.asar.unpacked\cli\dist)缺失
+#       => 安装不完整，既不能 unpacked 扫描补丁、也无法回填（数据不在 asar 内）
+#   - 头部把 cli/dist 打包进 asar（有 offset）
+#       => 当前 unpacked 扫描看不到，需 repack（暂未实现，给出明确提示）
+function Get-WBAsarCliState([Parameter(Mandatory)][string]$WBRoot) {
+    $asar = Join-Path $WBRoot 'resources\app.asar'
+    if (-not (Test-Path -LiteralPath $asar)) { return $null }
+    $header = Read-AsarHeader $asar
+    if (-not $header -or -not $header.files -or -not $header.files.cli -or -not $header.files.cli.files.dist) {
+        return [pscustomobject]@{ HasCli = $false }
+    }
+    $dist = $header.files.cli.files.dist
+    $anyUnpacked = $false
+    $anyPacked = $false
+    $distFiles = @()
+    foreach ($p in $dist.files.PSObject.Properties) { $distFiles += $p.Value }
+    foreach ($f in $distFiles) {
+        if ($f.PSObject.Properties['unpacked'] -and $f.unpacked -eq $true) { $anyUnpacked = $true }
+        if ($f.PSObject.Properties['offset']) { $anyPacked = $true }
+    }
+    # 递归看 lazy 子目录（lazy-headless / lazy-lite-wb 等）
+    $sub = @($dist.files.PSObject.Properties | Where-Object { $_.Value.files })
+    foreach ($d in $sub) {
+        foreach ($p in $d.Value.files.PSObject.Properties) {
+            $f = $p.Value
+            if ($f.PSObject.Properties['unpacked'] -and $f.unpacked -eq $true) { $anyUnpacked = $true }
+            if ($f.PSObject.Properties['offset']) { $anyPacked = $true }
+        }
+    }
+    $sidecarDir = Join-Path $WBRoot 'resources\app.asar.unpacked\cli\dist'
+    return [pscustomobject]@{
+        HasCli        = $true
+        AnyUnpacked   = $anyUnpacked
+        AnyPacked     = $anyPacked
+        SidecarExists = (Test-Path -LiteralPath $sidecarDir)
+        SidecarDir    = $sidecarDir
+    }
+}
 function Get-WBScanFiles {
     param([Parameter(Mandatory)][string]$WBRoot)
     $dist = Get-WBCliDistDir -WBRoot $WBRoot
@@ -742,9 +807,26 @@ function Invoke-WBBundleInjection {
     }
     $bundles = @(Get-WBBundles -WBRoot $WBRoot)
     if ($bundles.Count -eq 0) {
-        Write-Host "  [提示] 该版本把 cli/dist 打包在 app.asar 内（国际版常见），无 unpacked 锚点可补。" -ForegroundColor Yellow
-        Write-Host "         回退到记忆文件注入；若提示词 >10000 字符会被截断到前 10000 字符。" -ForegroundColor Yellow
-        Write-Log "bundle 不可用: 无 unpacked 锚点 $WBRoot (可能打包在 app.asar)"
+        # 用 asar 头诊断真实原因，给出能落地的修复方向，而不是笼统一句「打包在 asar 内」。
+        # 实测国际版 WorkBuddyAI：头部把 cli/dist 标成 unpacked=true，但侧车目录缺失
+        # （app.asar.unpacked 里只有 native 和 node_modules，没有 cli），且 asar 内也没有
+        # 打包数据（无 offset）—— 这是「安装不完整」，repack 无米下锅，必须修复安装。
+        $diag = Get-WBAsarCliState -WBRoot $WBRoot
+        if ($diag -and $diag.HasCli -and $diag.AnyUnpacked -and -not $diag.AnyPacked -and -not $diag.SidecarExists) {
+            Write-Host "  [诊断] 该版本头部把 cli/dist 标为 unpacked，但侧车目录缺失：" -ForegroundColor Yellow
+            Write-Host "         $($diag.SidecarDir)" -ForegroundColor Yellow
+            Write-Host "         这是安装不完整（缺 app.asar.unpacked\cli 侧车），asar 内也没有打包数据可回填。" -ForegroundColor Yellow
+            Write-Host "         请修复/重装 WorkBuddy 国际版后再注入；本次回退到记忆文件注入。" -ForegroundColor Yellow
+            Write-Log "bundle 不可用: 国际版侧车缺失(安装不完整) $WBRoot"
+        } elseif ($diag -and $diag.HasCli -and $diag.AnyPacked) {
+            Write-Host "  [诊断] cli/dist 确实打包在 app.asar 内（头部有 offset），当前 unpacked 扫描无法覆盖。" -ForegroundColor Yellow
+            Write-Host "         需要 asar repack 注入（暂未实现）；本次回退到记忆文件注入，>10000 字符会被截断。" -ForegroundColor Yellow
+            Write-Log "bundle 不可用: cli/dist 打包在 app.asar 内(需 repack) $WBRoot"
+        } else {
+            Write-Host "  [提示] 无 unpacked 锚点可补（无法确定 cli/dist 形态），回退到记忆文件注入。" -ForegroundColor Yellow
+            Write-Host "         若提示词 >10000 字符会被截断到前 10000 字符。" -ForegroundColor Yellow
+            Write-Log "bundle 不可用: 无 unpacked 锚点 $WBRoot"
+        }
         return $false
     }
 

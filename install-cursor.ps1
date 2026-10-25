@@ -29,6 +29,7 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
 # Cursor 全局 User Rules 目录探测（覆盖标准安装 / 便携版 / 自定义 --user-data-dir）
 $ruleFile = '海鸥V8·破甲版注入.mdc'
 $legacyRuleFile = '.cursorrules'
+$agentsFile = 'AGENTS.md'
 $marker = '<!-- HANSHUANG-CURSOR-INJECT -->'
 $statePath = Join-Path $env:APPDATA 'Cursor\hs-install-state.json'
 
@@ -174,6 +175,17 @@ function Get-DriveRulePaths {
     return @($result | Select-Object -Unique)
 }
 
+function Get-AgentsPaths {
+    # Cursor 3.x 的 getGlobalRules() 明确接受工作区根目录的 /AGENTS.md 作为全局规则
+    # （无条件附加，不要求 alwaysApply 或 globs）。这是比 ~/.cursor/rules 更可靠的注入点，
+    # 因为 ~/.cursor/rules 在 3.x 已不再被自动附加到对话。
+    $result = @()
+    foreach ($proj in (Get-CursorProjects)) {
+        $result += (Join-Path $proj $agentsFile)
+    }
+    return @($result | Select-Object -Unique)
+}
+
 function Test-IsPrimary([string]$Path) {
     # 主路径 = 全局 User Rules（决定注入是否真的全局生效）
     $p = $Path
@@ -222,6 +234,23 @@ if ($Uninstall -or $RestoreMemory) {
                 $removedAny = $true
             }
         }
+        # 卸载工作区根目录的 AGENTS.md（含我们标记的才动，用户自己的保留）
+        foreach ($p in (Get-AgentsPaths)) {
+            if (-not (Test-Path -LiteralPath $p)) { continue }
+            $content = Read-Utf8 $p
+            if ($content -notmatch [regex]::Escape($marker)) { continue }
+            $bak = $p + '.bak'
+            if (Test-Path -LiteralPath $bak) {
+                Copy-Item -LiteralPath $bak -Destination $p -Force
+                Remove-Item -LiteralPath $bak -Force
+                Write-Host ("Restored original AGENTS.md: " + $p)
+                $restoredAny = $true
+            } else {
+                Remove-Item -LiteralPath $p -Force
+                Write-Host ("Removed injected AGENTS.md: " + $p)
+                $removedAny = $true
+            }
+        }
         Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
         if (-not ($removedAny -or $restoredAny)) {
             Write-Host "No Cursor rule injection found, nothing to do"
@@ -240,10 +269,13 @@ if (-not (Test-Path -LiteralPath $SourcePrompt -PathType Leaf)) {
 
 try {
     $body = Read-Utf8 $SourcePrompt
-    # .mdc 格式：description + globs + alwaysApply frontmatter + 正文（带注入标记便于卸载识别）
+    # .mdc 格式：description + alwaysApply frontmatter + 正文（带注入标记便于卸载识别）。
+    # 关键：不能带 globs。Cursor 3.x 的 getGlobalRules() 判定「全局自动生效」的硬条件是
+    # alwaysApply===true 且 无 globs；一旦写了 globs（哪怕是 "**/*"），这条规则会被归到
+    # 「按文件 glob 匹配」那一类，只有当前上下文里有匹配文件时才附加 —— 新开对话没选文件
+    # 就等于不生效。这就是之前「注入成功但对话没效果」的根因之一。
     $mdc = "---" + [Environment]::NewLine +
            "description: 海鸥V8·破甲版工作规范（自动注入 · 全局生效）" + [Environment]::NewLine +
-           'globs: "**/*"' + [Environment]::NewLine +
            "alwaysApply: true" + [Environment]::NewLine +
            "---" + [Environment]::NewLine + [Environment]::NewLine +
            $marker + [Environment]::NewLine +
@@ -293,6 +325,27 @@ try {
     # 4) 盘符根祖先规则：让「该盘任意新文件夹」都自动继承（失败不致命）
     foreach ($target in (Get-DriveRulePaths)) {
         Write-RuleFile $target
+    }
+    # 5) 工作区根目录 AGENTS.md：Cursor 3.x 唯一「无条件全局生效」的本地规则载体。
+    #    写在每个探测到的项目根目录，纯 markdown（无 frontmatter），带标记便于卸载识别。
+    foreach ($target in (Get-AgentsPaths)) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        if (Test-Path -LiteralPath $target) {
+            $cur = Read-Utf8 $target
+            if ($cur -notmatch [regex]::Escape($marker)) {
+                Copy-Item -LiteralPath $target -Destination ($target + '.bak') -Force
+            }
+        }
+        try {
+            $agentsContent = $marker + [Environment]::NewLine + $body.TrimEnd() + [Environment]::NewLine
+            Write-Utf8NoBom $target $agentsContent
+            if (-not (Test-Path -LiteralPath $target)) { throw '写入后文件不存在（被占用或权限不足）' }
+            $script:written += $target
+            Write-Host ("OK: " + $target)
+        } catch {
+            $script:failed += "$target -> $($_.Exception.Message)"
+            Write-Host ("跳过(非致命): " + $target + " -> " + $_.Exception.Message) -ForegroundColor Yellow
+        }
     }
     # 记录实际写入路径，供卸载精确清理
     try {
