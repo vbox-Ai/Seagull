@@ -39,6 +39,51 @@
   gap: 16px;
 }
 
+/* 首页顶栏右侧：个人中心入口（海鸥青实心 pill，醒目） */
+.sg-home-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--sg-accent);
+  color: var(--sg-accent-ink);
+  padding: 9px 18px 9px 10px;
+  cursor: pointer;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  box-shadow: 0 6px 18px color-mix(in oklab, var(--sg-accent) 38%, transparent);
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.sg-home-profile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px color-mix(in oklab, var(--sg-accent) 46%, transparent);
+}
+
+.sg-home-profile:active {
+  transform: translateY(0);
+}
+
+.sg-home-profile:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--sg-accent) 45%, transparent);
+}
+
+.sg-home-profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-round);
+  background: color-mix(in oklab, var(--sg-accent-ink) 20%, transparent);
+  color: var(--sg-accent-ink);
+}
+
 .sg-home-title {
   margin: 0;
   color: var(--ds-text-primary);

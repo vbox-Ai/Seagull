@@ -91,6 +91,28 @@ if (Test-Path -LiteralPath $clearScript) {
   Write-Host ("  未找到清理脚本，跳过：{0}" -f $clearScript) -ForegroundColor Yellow
 }
 
+# --- 2.5 Seep 逆向工作台残留（~/.pi/agent）----------------------------------
+# 便携卸载只负责删程序目录，但 Seep 工作台部署会往 ~/.pi/agent 写技能、提示词、
+# mcp.json 条目与 settings.json packages。这些不在 clear-injected-prompts 的
+# 目标清单里（它只管 codex/zcode/cursor/opencode/claude/workbuddy/dsh），
+# 必须单独跑工作台自带的卸载脚本，否则卸载后 Pi Agent 还满身海鸥的东西。
+Write-Host '[2.5/6] 清除 Seep 工作台残留（~/.pi/agent）'
+$seepUninstall = Join-Path $AppDir 'resources\seep-kit\setup\uninstall.ps1'
+if (Test-Path -LiteralPath $seepUninstall) {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $seepUninstall -Yes -Purge
+  Write-Host ("  Seep 卸载退出码: {0}（0=已完成）" -f $LASTEXITCODE)
+} else {
+  Write-Host ("  未找到 Seep 卸载脚本，跳过：{0}" -f $seepUninstall) -ForegroundColor Yellow
+}
+
+# --- 2.6 临时目录残留 ---------------------------------------------------------
+# 提示词 zip 解压临时目录 seagull-prompt-*、REA 下载临时包 seagull-rea-main.zip
+# 正常会被主进程 finally 删掉，异常中断时可能留下，这里兜底清一次。
+Write-Host '[2.6/6] 清除临时文件'
+Remove-Target '临时文件' (Join-Path $env:TEMP 'seagull-rea-main.zip')
+Get-ChildItem $env:TEMP -Directory -Filter 'seagull-prompt-*' -ErrorAction SilentlyContinue |
+  ForEach-Object { Remove-Target '临时目录' $_.FullName }
+
 # --- 3. 用户数据与缓存 --------------------------------------------------------
 Write-Host '[3/6] 清理用户数据与缓存'
 if ($KeepData) {
@@ -111,6 +133,8 @@ if ($KeepData) {
       Remove-Target '状态文件' (Join-Path $codexHome $f)
     }
   }
+  # 用户自定义技能真源（决策点1：~/.seagull/custom-skills），默认卸载一并清掉
+  Remove-Target '自定义技能源' (Join-Path $env:USERPROFILE '.seagull')
 }
 
 # --- 3. 快捷方式 --------------------------------------------------------------

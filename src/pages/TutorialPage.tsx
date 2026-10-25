@@ -10,7 +10,7 @@ export function TutorialPage() {
           <div>
             <h2 className="settings-card-heading">说明</h2>
             <p className="settings-card-description">
-              填提示词 → 点安装 → 输入 lab： 就能用。不想要了点卸载，自动还原回去。
+              导入提示词 → 点安装 → 输入 lab： 就能用。不想要了点卸载，自动还原回去。
             </p>
           </div>
           <span className="badge badge-neutral">3 步上手</span>

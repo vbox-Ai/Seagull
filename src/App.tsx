@@ -25,10 +25,10 @@ import {
   IconCheck,
   IconCircleAlert,
   IconDatabase,
+  IconFileText,
   IconGlobe,
   IconHome,
   IconListChecks,
-  IconUser,
 } from "./components/icons";
 import { HomePage } from "./pages/HomePage";
 import { Wizard } from "./pages/Wizard";
@@ -36,10 +36,11 @@ import { EnginesPage } from "./pages/EnginesPage";
 import { SkillsPage } from "./pages/SkillsPage";
 import { TutorialPage } from "./pages/TutorialPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { PromptsPage } from "./pages/PromptsPage";
 import { TransferStation } from "./pages/TransferStation";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage";
 
-type ViewId = "home" | "seep" | "skills" | "transfer" | "profile" | "tutorial" | "diag";
+type ViewId = "home" | "prompts" | "seep" | "skills" | "transfer" | "profile" | "tutorial" | "diag";
 export type StatusLevel = "idle" | "busy" | "ok" | "err";
 
 export function App() {
@@ -349,7 +350,7 @@ export function App() {
     reloadPrompts();
   };
 
-  const dockItem = (id: ViewId, Icon: typeof IconUser, label: string) => (
+  const dockItem = (id: ViewId, Icon: typeof IconHome, label: string) => (
     <button
       key={id}
       type="button"
@@ -403,8 +404,12 @@ export function App() {
                     targets={TARGETS}
                     overview={overview}
                     onOpen={openWizard}
-                    onOpenTutorial={() => setView("tutorial")}
+                    onOpenProfile={() => setView("profile")}
                   />
+                )}
+
+                {view === "prompts" && (
+                  <PromptsPage onPromptsChanged={handlePromptsChanged} />
                 )}
 
                 {view === "seep" && (
@@ -450,9 +455,9 @@ export function App() {
                     theme={theme}
                     onToggleTheme={toggleTheme}
                     onOpenQQ={openQQ}
+                    onOpenTutorial={() => setView("tutorial")}
                     onQuit={() => hs.quit()}
                     onOpenDiag={() => setView("diag")}
-                    onPromptsChanged={handlePromptsChanged}
                   />
                 )}
 
@@ -475,10 +480,10 @@ export function App() {
         {/* 悬浮胶囊底栏：五入口只显示图标 */}
         <nav className="sg-dock" aria-label="主导航">
           {dockItem("home", IconHome, "首页")}
+          {dockItem("prompts", IconFileText, "提示词管理")}
           {dockItem("seep", IconDatabase, "Seep 逆向工作台")}
           {dockItem("skills", IconListChecks, "Skills 管理")}
           {dockItem("transfer", IconGlobe, "满血中转站")}
-          {dockItem("profile", IconUser, "个人中心")}
         </nav>
       </div>
 

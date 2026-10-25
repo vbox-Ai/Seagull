@@ -116,13 +116,17 @@ export const TARGETS: Target[] = [
 export const TUTORIAL_TITLE = "使用教程";
 
 export const TUTORIAL_TEXT = [
-  "照着做，两步装好，第三步就能用。",
+  "照着做，三步装好，立刻开用。",
   "",
-  "第 1 步：填提示词",
-  "    打开 memory 文件夹 → 打开「破甲记忆.md」→ 把提示词粘进去 → 保存。",
+  "第 1 步：准备提示词",
+  "    点底栏「提示词管理」→「导入提示词」，选 .md / .txt / .zip",
+  "    （可多选，zip 自动解包）。导入后点「设为当前」选定要注入的那一份。",
+  "    随包已带一份破甲记忆，不想换可直接跳过这一步。",
   "",
-  "第 2 步：点安装",
-  "    左边选你要用的 AI → 点「安装」。装完把那个 AI 完全关掉再打开。",
+  "第 2 步：注入目标 AI",
+  "    回首页，点你要用的平台卡片（Codex / ZCode / Cursor / OpenCode /",
+  "    Claude / WorkBuddy 国际版 / 国内版 / DeepSeek Harness / 豆包）",
+  "    → 点「安装」。装完把那个 AI 完全关掉再重新打开。",
   "",
   "第 3 步：开始用（重点）",
   "    在对话框里输入：",
@@ -134,11 +138,16 @@ export const TUTORIAL_TEXT = [
   "            lab：帮我看看这个 apk",
   "",
   "    这一句只发一次，之后正常说话就行。不想用了发一句「退出实验」。",
-  "    想让它会用逆向工具，先去「Seep 逆向工作台」点一下「部署工作台」。",
+  "    想让它调用逆向工具，先去底栏「Seep 逆向工作台」点「部署工作台」。",
   "",
   "不要了怎么退",
   "    「卸载」= 全部清掉，还原成装之前的样子",
   "    「装回原始记忆」= 只还提示词，技能留着",
+  "",
+  "常用入口",
+  "    首页右上角「个人中心」→ 使用教程 / 注入历史 / 深浅色 / 系统诊断",
+  "    底栏「Skills 管理」→ 查看 / 启停本机 Codex 技能",
+  "    底栏「满血中转站」→ QQ 群加入页",
   "",
   "                        永久免费 · QQ群694080138",
 ].join("\n");
@@ -146,8 +155,8 @@ export const TUTORIAL_TEXT = [
 /** 加入QQ群 / 不会用点这里：两个入口同一个群邀请链接。 */
 export const QQ_LINK = "https://qm.qq.com/q/SunmGoiWkg";
 
-/** 满血中转站：导航栏点击后用系统浏览器打开注册页。 */
-export const RELAY_LINK = "https://www.baidu.com";
+/** 满血中转站：内嵌 WebView 加载 QQ 群加入页。 */
+export const RELAY_LINK = "https://qm.qq.com/q/SunmGoiWkg";
 
 /** 不会用点这里：导航栏点击后直接用系统浏览器打开 QQ 群。 */
 export const HELP_LINK = "https://qm.qq.com/q/SunmGoiWkg";
