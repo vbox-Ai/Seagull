@@ -1,8 +1,8 @@
 # 依赖与构建产物
 node_modules/
 dist/
-release/
-release2/
+# 打包产物：release、release2，以及被占用时用 SG_OUTPUT 指定的 release3 等临时目录
+release*/
 _shots/
 .electron-builder.*.json
 *.blockmap
