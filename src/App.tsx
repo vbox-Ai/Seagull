@@ -188,7 +188,7 @@ export function App() {
         const reason = res.error || res.out || "";
         if (reason.includes("记忆文件为空")) {
           setToastLevel("error");
-          setToast("记忆文件为空：请先把提示词粘进 memory 目录下的 .md 文件");
+          setToast("记忆文件为空：请先到「提示词管理」导入一份提示词 .md");
         }
       }
       setBusy(false);

@@ -164,7 +164,7 @@ function seepScript(name) {
    返回 null 表示还没填，界面据此报错，避免把空提示词写进用户记忆档案。
 */
 function memoryPrompt() {
-  const dir = p(MEMORY_DIR);
+  const dir = promptDir();
   // 用户在「提示词管理」里点过「设为当前」：优先用它，而不是按文件名排序取第一个
   try {
     const active = loadState().activePrompt;
@@ -765,8 +765,56 @@ function historyList() {
 
 // ---------- 功能3：提示词管理 ----------
 
-function promptDir() {
+/** 旧版提示词目录：随包落在程序目录里（<app>\resources\memory 或开发时的 memory\）。 */
+function legacyPromptDir() {
   return p(MEMORY_DIR);
+}
+
+/**
+   用户提示词库的真实位置：%APPDATA%\seagull-v8\prompts（Electron userData）。
+   以前直接放程序目录，会踩两个坑：
+     · 卸载-便携版 最后一步整目录删除，等于把你的提示词当程序文件销毁；
+     · 换个版本解压到新目录，提示词全部留在旧目录里，看起来就是「没了」。
+   挪到 userData 后：升级不丢，卸载由卸载脚本显式清理（可见、可控）。
+*/
+function promptDir() {
+  // 开发模式仍用仓库里的 memory\：那儿是源码目录，搬走会把工作区文件搬没
+  if (!app.isPackaged) return p(MEMORY_DIR);
+  return path.join(app.getPath("userData"), "prompts");
+}
+
+/** 首次启动把老位置里的提示词搬进新库。只搬 .md，不动 README，重名以新库为准。 */
+function migrateLegacyPrompts() {
+  try {
+    if (!app.isPackaged) return;
+    const legacy = legacyPromptDir();
+    const dest = promptDir();
+    if (!fs.existsSync(legacy)) return;
+    if (path.resolve(legacy) === path.resolve(dest)) return;
+    const names = fs
+      .readdirSync(legacy)
+      .filter((n) => /\.md$/i.test(n) && n.toLowerCase() !== "readme.md");
+    if (names.length === 0) return;
+    fs.mkdirSync(dest, { recursive: true });
+    let moved = 0;
+    for (const n of names) {
+      const from = path.join(legacy, n);
+      const to = path.join(dest, n);
+      if (fs.existsSync(to)) continue;
+      try {
+        fs.copyFileSync(from, to);
+        fs.rmSync(from, { force: true });
+        moved++;
+      } catch {
+        /* 单个文件搬不动就算了，别影响启动 */
+      }
+    }
+    if (moved > 0) {
+      appendHistory({ action: "migrate-prompts", target: "-", prompt: `${moved} 个`, ok: true, detail: legacy });
+    }
+  } catch {
+    /* 迁移是尽力而为，失败不影响启动 */
+  }
 }
 
 function currentActivePromptName() {
@@ -1242,7 +1290,7 @@ async function doInstall(targetId) {
   }
   const prompt = memoryPrompt();
   if (!prompt) {
-    const dir = p(MEMORY_DIR);
+    const dir = promptDir();
     const text = `记忆文件为空：请先把提示词粘进 ${dir} 下的 .md 文件，再点安装。`;
     send("tool:status", { label: "记忆文件为空", state: "idle" });
     send("tool:log", { label: "安装中止", text: text + "\n" });
@@ -1288,7 +1336,7 @@ async function doUninstall(targetId) {
 async function doDoubaoChatInject() {
   const prompt = memoryPrompt();
   if (!prompt) {
-    const text = `记忆文件为空：请先把提示词粘进 ${p(MEMORY_DIR)} 下的 .md 文件。`;
+    const text = `记忆文件为空：请先把提示词粘进 ${promptDir()} 下的 .md 文件。`;
     send("tool:log", { label: "破甲对话中止", text: text + "\n" });
     return { ok: false, code: -1, timedOut: false, out: text, error: text, installed: installedSnapshot().installed };
   }
@@ -1958,6 +2006,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    migrateLegacyPrompts();
     registerIpc();
     createWindow();
     setupTray();

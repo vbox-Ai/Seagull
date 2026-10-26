@@ -2,7 +2,7 @@
 #  海鸥V8·破甲版 · 便携版完全卸载
 #
 #  便携版没有安装器，删掉文件夹就等于卸载 —— 但直接删文件夹会留下：
-#    %APPDATA%\seagull-v8          （运行过就会生成，Chromium 用户数据）
+#    %APPDATA%\seagull-v8          （运行过就会生成，Chromium 用户数据 + 提示词库 prompts\）
 #    %LOCALAPPDATA%\seagull-v8-updater
 #    ~/.codex\seagull_desktop_state.json / seagull_settings.json（本工具自己的状态文件）
 #    桌面 / 开始菜单快捷方式、AppUserModelId 注册表项
@@ -74,6 +74,19 @@ foreach ($exe in '海鸥V8·破甲版.exe', '海鸥V8·破甲版 Pro.exe') {
     Write-Host ("  已结束进程: {0}" -f $exe)
   }
 }
+# 兜底：按**可执行文件路径**再扫一遍。名字改了（换版本改名 / 加壳改名）时上面那段匹配不到，
+# 进程不死 → 第 6 步删目录必然失败 → 整个卸载变成「什么都没删掉」。
+$killedByPath = 0
+foreach ($proc in (Get-Process -ErrorAction SilentlyContinue)) {
+  $exePath = ''
+  try { $exePath = $proc.Path } catch { continue }
+  if (-not $exePath) { continue }
+  if (-not $exePath.StartsWith($AppDir, [StringComparison]::OrdinalIgnoreCase)) { continue }
+  try { $proc.Kill(); $killedByPath++ } catch { }
+}
+if ($killedByPath -gt 0) {
+  Write-Host ("  已按路径结束进程: {0} 个（{1} 下）" -f $killedByPath, $AppDir)
+}
 Start-Sleep -Seconds 2
 
 # --- 2. 注入的提示词 ----------------------------------------------------------
@@ -134,6 +147,30 @@ foreach ($cfg in @((Join-Path $env:USERPROFILE '.config\opencode'), (Join-Path $
   Remove-Target '破甲 agent' (Join-Path $cfg 'agents\hanshuang.md')
 }
 Remove-Target '豆包注入状态' (Join-Path $env:USERPROFILE '.doubao\managed-prompts')
+
+# --- 2.8 提示词库（你自己「导入提示词」进来的那堆 .md）-------------------------
+# 老版本提示词库藏在程序目录里（<AppDir>\resources\memory），只有一个下场：
+# 第 6 步整目录删除时被当成程序文件一起销毁 —— 既没有备份，也不会告诉你删了什么。
+# 新版本已挪到 %APPDATA%\seagull-v8\prompts（升级换目录不丢）。
+# 这里两步都清：新库显式删，旧位置兜底删，避免第 6 步删目录失败时提示词还赖着。
+Write-Host '[2.8/6] 清除提示词库（导入的 .md）'
+if ($KeepData) {
+  Write-Host '  （-KeepData：保留提示词库）' -ForegroundColor Yellow
+} else {
+  $promptDirs = @(
+    (Join-Path $env:APPDATA 'seagull-v8\prompts'),
+    (Join-Path $AppDir 'resources\memory')
+  )
+  foreach ($pd in $promptDirs) {
+    if (-not (Test-Path -LiteralPath $pd)) { continue }
+    # README.md 是随包说明，不是用户提示词，跟着程序目录走就行
+    $mds = @(Get-ChildItem -LiteralPath $pd -Filter '*.md' -File -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -ne 'README.md' })
+    if ($mds.Count -eq 0) { continue }
+    foreach ($m in $mds) { Remove-Target '提示词' $m.FullName }
+    Write-Host ("  提示词库 {0}：共清 {1} 个 .md" -f $pd, $mds.Count)
+  }
+}
 
 # --- 3. 用户数据与缓存 --------------------------------------------------------
 Write-Host '[3/6] 清理用户数据与缓存'

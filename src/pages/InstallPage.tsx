@@ -59,7 +59,7 @@ export function InstallPage({
               <div className="settings-row-desc">
                 {memory
                   ? "已读取 " + memory.chars + " 字；安装时会连同 Seep 工作台技能库一起写入该目标。"
-                  : "把提示词粘进随包的 memory 目录下的 .md 文件（默认「破甲记忆.md」）后再点安装。"}
+                  : "先到「提示词管理」导入一份 .md 并设为当前，再点安装。"}
               </div>
             </span>
           </div>

@@ -111,7 +111,7 @@ export function Wizard({
         <div className="sg-wizard-card">
           <h2 className="sg-wizard-title">选择注入提示词</h2>
           <p className="app-prose">
-            提示词来自 memory 目录。选择一个作为当前注入源，之后正常安装即用。
+            提示词来自提示词库（独立存放，卸载或换版本不会丢）。选择一个作为当前注入源，之后正常安装即用。
           </p>
           {prompts.length === 0 ? (
             <div className="sg-hint">
