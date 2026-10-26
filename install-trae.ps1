@@ -210,6 +210,10 @@ if ([string]::IsNullOrWhiteSpace($SourcePrompt)) {
     $md = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.md' -File -ErrorAction SilentlyContinue | Sort-Object Name)
     if ($md.Count -eq 0) { throw "没有指定提示词（-SourcePrompt），脚本目录下也没有 .md" }
     $SourcePrompt = $md[0].FullName
+} else {
+    # 相对路径按当前 shell 位置解析。[System.IO.File] 用的是进程当前目录，
+    # 从别处 Set-Location 过来时两者不一致，会把 memory\x.md 解析到父目录去。
+    $SourcePrompt = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourcePrompt)
 }
 if (-not (Test-Path -LiteralPath $SourcePrompt)) { throw "提示词文件不存在: $SourcePrompt" }
 

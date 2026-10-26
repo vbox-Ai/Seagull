@@ -69,7 +69,12 @@ $promptMap = @{ 'v4' = '海鸥V8·破甲版v4-claude.md'; 'v3' = '海鸥V8·破�
 # 本构建不再随包分发提示词：卸载/还原/查状态模式都跳过提示词解析与读取
 # （-Status 只读云端记忆，不需要提示词；以前要求它必须存在，状态查询直接报「提示词文件不存在」）。
 if (-not ($Uninstall -or $RestoreMemory -or $Status -or $ProbeMemory -or $ProbeCap)) {
-    if (-not $SourcePrompt) { $SourcePrompt = Join-Path $Root $promptMap[$Version] }
+    if (-not $SourcePrompt) {
+        $SourcePrompt = Join-Path $Root $promptMap[$Version]
+    } else {
+        # 相对路径按当前 shell 位置解析，别让 .NET 进程目录把路径解析到父目录
+        $SourcePrompt = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourcePrompt)
+    }
     if (-not (Test-Path -LiteralPath $SourcePrompt)) { throw "提示词文件不存在: $SourcePrompt" }
     $srcText = Read-Utf8 $SourcePrompt
     $srcHash = (Get-FileHash -LiteralPath $SourcePrompt -Algorithm SHA256).Hash
