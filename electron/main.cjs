@@ -257,12 +257,16 @@ function installArgs(targetId, promptFile) {
         "-KnownPrompts", promptFile,
       ];
     case "opencode":
-      // 全局规则写 ~/.config/opencode/AGENTS.md，技能落 ~/.config/opencode/skills
+      // 双通道：
+      //   1) agents/hanshuang.md —— 正文即系统提示词（真正的破甲层）
+      //   2) AGENTS.md —— 追加指令（兜底，防止其他 agent 漏掉）
+      // -SetDefault 把 hanshuang 设为默认 agent，否则内置 build agent 的系统提示词会压过来
       return [
         "-File", file,
         "-SourcePrompt", promptFile,
         "-SkillsSource", skills,
         "-KnownPrompts", promptFile,
+        "-SetDefault",
       ];
     case "workbuddy":
       return ["-File", file, "-SourcePrompt", promptFile, "-SkillsSource", skills];

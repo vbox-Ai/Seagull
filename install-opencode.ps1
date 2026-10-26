@@ -13,7 +13,9 @@ param(
     # 把破甲 agent 设为默认 agent（写 opencode.json 的 default_agent）
     [switch]$SetDefault,
     # 破甲 agent 固定使用的模型（provider/model，例：wb-proxy/deepseek-v4.1-flash）
-    [string]$AgentModel
+    [string]$AgentModel,
+    # 只打印当前注入状态，不写任何文件
+    [switch]$Status
 )
 
 Set-StrictMode -Off
@@ -112,6 +114,12 @@ if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
     }
 }
 $ConfigDir = [System.IO.Path]::GetFullPath($ConfigDir)
+
+# 相对路径必须按 PowerShell 当前位置解析。[System.IO.File] 用的是 .NET 进程当前目录，
+# 从别的目录 Set-Location 过来时两者不一致，会把 memory\破甲记忆.md 解析到父目录去。
+if (-not [string]::IsNullOrWhiteSpace($SourcePrompt)) {
+    $SourcePrompt = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourcePrompt)
+}
 $agentsMd = Join-Path $ConfigDir 'AGENTS.md'
 $managedDir = Join-Path $ConfigDir 'managed-prompts'
 $backupPath = Join-Path $managedDir 'AGENTS.md.bak'
@@ -248,6 +256,54 @@ function Remove-Skills([string[]]$SkillNames) {
     return $removedSkills
 }
 
+if ($Status) {
+    Write-Host ('== OpenCode 注入状态 ==[' + $ConfigDir + ']') -ForegroundColor Cyan
+
+    # 1) agent 通道（正文即系统提示词，真正的破甲层）
+    if (Test-Path -LiteralPath $agentFile -PathType Leaf) {
+        $aHead = (Read-Utf8 $agentFile)
+        $aMode = ''
+        $mm = [regex]::Match($aHead, '(?m)^mode:\s*(\S+)')
+        if ($mm.Success) { $aMode = ' / mode=' + $mm.Groups[1].Value }
+        # 只报正文长度（去掉 YAML frontmatter），和 AIGENTS.md 通道的口径对齐
+        $aBody = $aHead
+        $fm = [regex]::Match($aHead, '^---\r?\n[\s\S]*?\r?\n---\r?\n')
+        if ($fm.Success) { $aBody = $aHead.Substring($fm.Length) }
+        Write-Host ('  破甲 agent : 已注入（正文 ' + $aBody.Trim().Length + ' 字符' + $aMode + '）') -ForegroundColor Green
+    } else {
+        Write-Host '  破甲 agent : 未注入' -ForegroundColor Yellow
+    }
+
+    # 2) default_agent 是否已指向 hanshuang
+    $defAgent = ''
+    if (Test-Path -LiteralPath $configJson -PathType Leaf) {
+        try {
+            $cfgObj = (Read-Utf8 $configJson) | ConvertFrom-Json
+            if ($cfgObj.PSObject.Properties.Name -contains 'default_agent') { $defAgent = [string]$cfgObj.default_agent }
+        } catch { $defAgent = '<opencode.json 解析失败>' }
+    }
+    if ($defAgent -eq $agentName) {
+        Write-Host ('  默认 agent : ' + $defAgent + '（已生效）') -ForegroundColor Green
+    } elseif ([string]::IsNullOrWhiteSpace($defAgent)) {
+        Write-Host '  默认 agent : 未设置 —— 需加 -SetDefault，否则内置 build agent 会压过破甲人格' -ForegroundColor Yellow
+    } else {
+        Write-Host ('  默认 agent : ' + $defAgent + '（不是 ' + $agentName + '，破甲不会自动生效）') -ForegroundColor Yellow
+    }
+
+    # 3) AGENTS.md 追加指令通道（兜底）
+    if (Test-Path -LiteralPath $agentsMd -PathType Leaf) {
+        $cur = Read-Utf8 $agentsMd
+        if (Find-InjectBlock $cur) {
+            Write-Host ('  AGENTS.md  : 已注入（整份 ' + $cur.Length + ' 字符）') -ForegroundColor Green
+        } else {
+            Write-Host ('  AGENTS.md  : 无注入块（' + $cur.Length + ' 字符）') -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '  AGENTS.md  : 不存在' -ForegroundColor Yellow
+    }
+    exit 0
+}
+
 # 卸载/还原模式不解析提示词文件，安装模式才要求它存在。
 if ([string]::IsNullOrWhiteSpace($SourcePrompt) -and -not ($Uninstall -or $RestoreMemory)) {
     $mdFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.md' -File | Sort-Object Name)
@@ -319,10 +375,12 @@ if ($Uninstall -or $RestoreMemory) {
     }
     if (Test-Path -LiteralPath $configJson) {
         try {
-            $cfg = Read-Utf8 $configJson | ConvertFrom-Json
-            if ($cfg.default_agent -eq $agentName) {
-                $cfg.PSObject.Properties.Remove('default_agent')
-                Write-Utf8NoBom $configJson (($cfg | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
+            $raw = Read-Utf8 $configJson
+            $cur = $raw | ConvertFrom-Json
+            if ($cur.default_agent -eq $agentName) {
+                # 只删除那一行 key，不整份重排 —— ConvertTo-Json 会把用户的缩进风格改烂
+                $new = [regex]::Replace($raw, '(?m)^\s*"default_agent"\s*:\s*"(?:[^"\\]|\\.)*"\s*,?\r?\n', '')
+                Write-Utf8NoBom $configJson $new
                 Write-Host "Cleared default_agent"
             }
         } catch {
@@ -450,19 +508,34 @@ Write-Utf8NoBom $agentFile $agentBody
 Write-Host ("Wrote agent -> agents\" + $agentName + ".md (" + $promptText.Length + " chars)")
 
 # 可选：设为默认 agent。不改用户其它字段，只加 default_agent。
+# 用文本级手术而不是 ConvertTo-Json 整份重写：后者会把用户的 2 空格缩进改成
+# Powershell 的对齐风格，文件虽然还是合法 JSON，但手改起来很痛苦。
 if ($SetDefault) {
-    $cfg = [ordered]@{}
+    $val = '"' + $agentName + '"'
     if (Test-Path -LiteralPath $configJson) {
-        try {
-            $parsed = Read-Utf8 $configJson | ConvertFrom-Json
-            foreach ($p in $parsed.PSObject.Properties) { $cfg[$p.Name] = $p.Value }
-        } catch {
+        $raw = Read-Utf8 $configJson
+        $ok = $true
+        try { [void]($raw | ConvertFrom-Json) } catch { $ok = $false }
+        if (-not $ok) {
             Write-Host "opencode.json 解析失败，跳过 default_agent 写入" -ForegroundColor Yellow
+        } else {
+            if ($raw -match '"default_agent"\s*:') {
+                $new = [regex]::Replace($raw, '("default_agent"\s*:\s*)"(?:[^"\\]|\\.)*"', ('${1}' + $val))
+            } else {
+                # 插到第一个 { 之后，缩进沿用文件里已有的第一层缩进
+                $indent = '  '
+                $mi = [regex]::Match($raw, '\{\r?\n([ \t]+)"')
+                if ($mi.Success) { $indent = $mi.Groups[1].Value }
+                $pos = $raw.IndexOf('{')
+                $insert = [Environment]::NewLine + $indent + '"default_agent": ' + $val + ','
+                $new = $raw.Substring(0, $pos + 1) + $insert + $raw.Substring($pos + 1)
+            }
+            if ($new -ne $raw) { Write-Utf8NoBom $configJson $new }
+            Write-Host ("Set default_agent -> " + $agentName)
         }
-    }
-    if ($cfg.Count -gt 0) {
-        $cfg['default_agent'] = $agentName
-        Write-Utf8NoBom $configJson (($cfg | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
+    } else {
+        $body = "{" + [Environment]::NewLine + '  "default_agent": ' + $val + [Environment]::NewLine + "}" + [Environment]::NewLine
+        Write-Utf8NoBom $configJson $body
         Write-Host ("Set default_agent -> " + $agentName)
     }
 }
