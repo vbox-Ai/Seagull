@@ -50,6 +50,14 @@ if (!cfg) {
   process.exit(1);
 }
 
+// 输出目录可被环境变量覆盖：旧的 release\win-unpacked 偶尔会被残留进程/杀软占住，
+// 删不掉也改不了名，electron-builder 在 EnsureEmptyDir 阶段直接失败。
+// 这时换个目录继续打包，比等占用释放现实。用法：SG_OUTPUT=release3 npm run dist
+if (process.env.SG_OUTPUT) {
+  cfg.output = process.env.SG_OUTPUT;
+  console.log(`[build] 输出目录覆盖为 ${cfg.output}`);
+}
+
 // 1) 写变体标记（主进程与渲染层都读这个文件）
 writeFileSync(
   join(appDir, "variant.json"),

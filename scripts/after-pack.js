@@ -15,6 +15,15 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
+/** 同步 sleep：rcedit 失败多半是 exe 句柄还没被 electron-builder 放开，等一会再试。 */
+const sleep = (ms) => {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    /* 极端环境不支持就退化成不等待 */
+  }
+};
+
 /** 在 electron-builder 缓存里找 rcedit-x64.exe（任何一次成功解压留下的即可）。 */
 function findRcedit() {
   const cacheRoot = path.join(
@@ -64,13 +73,23 @@ exports.default = async function afterPack(context) {
     }
     const ico = path.join(appRoot, "build", variant === "pro" ? "icon-pro.ico" : "icon.ico");
 
+    // 版本号必须跟 package.json 走：之前这里写死 1.0.0，exe 属性里显示的是
+    // 1.0.0 而不是实际发布版本，用户看文件属性根本分不清手里是哪个包。
+    let appVersion = "0.0.0";
+    try {
+      appVersion =
+        JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8")).version || appVersion;
+    } catch {
+      /* 读不到就用兜底值，别让打包中断 */
+    }
+
     const args = [
       exePath,
       "--set-version-string", "ProductName", productName,
       "--set-version-string", "FileDescription", productName,
       "--set-version-string", "CompanyName", "寒霜",
-      "--set-file-version", "1.0.0",
-      "--set-product-version", "1.0.0",
+      "--set-file-version", appVersion,
+      "--set-product-version", appVersion,
     ];
     if (fs.existsSync(ico)) {
       args.push("--set-icon", ico);
@@ -78,11 +97,21 @@ exports.default = async function afterPack(context) {
       console.log("[after-pack] 图标文件不存在，只写版本信息:", ico);
     }
 
-    try {
-      execFileSync(rcedit, args, { stdio: "inherit" });
-      console.log("[after-pack] 已写入图标与版本信息:", path.basename(exePath));
-    } catch (e) {
-      console.log("[after-pack] rcedit 失败:", String(e && e.message));
+    // 重试 3 次：electron-builder 刚写完 asar 完整性资源，exe 句柄有时还没释放，
+    // rcedit 会报 "Unable to commit changes"，一失败图标和版本信息就全丢了（实测踩过）。
+    let done = false;
+    for (let i = 0; i < 3 && !done; i++) {
+      try {
+        execFileSync(rcedit, args, { stdio: "inherit" });
+        done = true;
+        console.log("[after-pack] 已写入图标与版本信息:", path.basename(exePath), "v" + appVersion);
+      } catch (e) {
+        console.log(`[after-pack] rcedit 第 ${i + 1} 次失败:`, String(e && e.message).slice(0, 200));
+        if (i < 2) sleep(1200);
+      }
+    }
+    if (!done) {
+      console.log("[after-pack] rcedit 三次均失败，exe 将保留 Electron 默认图标与版本号");
     }
   }
 
