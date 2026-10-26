@@ -152,10 +152,12 @@ export function EnginesPage({
           </div>
         </div>
         <div className="app-inline-actions">
-          <button type="button" className="btn btn-secondary" disabled={depsBusy || fixing} onClick={onDepsCheck}>
+          {/* 三个按钮都要看全局 busy：注入/部署正在进行时再点「修复依赖」，
+              以前会在主进程里把那个 PowerShell 连带 taskkill 掉，安装静默失败。 */}
+          <button type="button" className="btn btn-secondary" disabled={depsBusy || fixing || busy} onClick={onDepsCheck}>
             {depsBusy ? "检测中 …" : "检测依赖"}
           </button>
-          <button type="button" className="btn btn-primary" disabled={depsBusy || fixing} onClick={onDepsFix}>
+          <button type="button" className="btn btn-primary" disabled={depsBusy || fixing || busy} onClick={onDepsFix}>
             {fixing ? "修复中 …" : "修复依赖"}
           </button>
         </div>

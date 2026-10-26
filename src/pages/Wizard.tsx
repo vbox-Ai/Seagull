@@ -13,7 +13,11 @@ type Props = {
   onSelectPrompt: (name: string) => void;
   engines: EnginesState | null;
   reaProgress: ReaProgress | null;
+  /** 全局是否有任务在跑（注入/还原/依赖修复共用主进程的单条 PowerShell 通道）。 */
   busy: boolean;
+  /** 依赖修复是否正在进行 + 它自己的说明文案。 */
+  fixing: boolean;
+  fixMsg: string;
   status: string;
   level: StatusLevel;
   logText: string;
@@ -36,6 +40,8 @@ export function Wizard({
   engines,
   reaProgress,
   busy,
+  fixing,
+  fixMsg,
   status,
   level,
   logText,
@@ -247,7 +253,7 @@ export function Wizard({
       )}
 
       {/* 状态与日志在所有步骤都可见：还原/重启按钮在第一步就有，不能点完没反馈 */}
-      {(status || logText) && (
+      {(status || logText || fixing) && (
         <div className="settings-card-block" style={{ marginTop: 16 }}>
           <div className="settings-card-heading-row">
             <p className="settings-card-description">
@@ -255,6 +261,15 @@ export function Wizard({
               {level === "err" ? "（详见下方日志）" : ""}
             </p>
           </div>
+          {/* 依赖修复是长时间下载（工具链几十 MB），只挂一串原始日志会让人以为卡死了。
+              这里补一句人在看的说明，并说明它结束后会自动重新检测。 */}
+          {fixing && (
+            <p className="settings-card-description" style={{ color: "var(--ds-text-warning, #b8860b)" }}>
+              {fixMsg || "正在修复逆向工具链 …"}
+              {" "}下载进度见下方日志；百分比按整数显示，慢网下会在一格停留较久，属正常现象。
+              修复期间其它注入操作会提示「正有任务在运行」，等它结束即可。
+            </p>
+          )}
           {logText ? (
             <div className="panel-card" style={{ padding: "12px 14px" }}>
               <LogView text={logText} />

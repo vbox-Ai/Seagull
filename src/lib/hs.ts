@@ -12,6 +12,8 @@ export type InstallResult = {
   /** 依赖修复的分项结果（有值说明走了 repair-tools.ps1 的 RESULT_JSON）。 */
   partial?: boolean;
   depsResults?: { ok: string[]; failed: string[]; partial: boolean };
+  /** 主进程并发闸门拒绝（已有 PowerShell 在跑）时为 true，error 里是原因。 */
+  busy?: boolean;
 };
 
 /** 重启 Codex：out 是 PowerShell 的原样输出，失败时 error 里带可读原因。 */

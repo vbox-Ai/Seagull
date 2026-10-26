@@ -356,8 +356,17 @@ function killChild() {
 
 function runPowerShell(args, label, timeoutMs) {
   return new Promise((resolve) => {
+    // 以前这里是无条件 killChild()：注入跑到一半时去点「修复依赖」，会把安装那个
+    // PowerShell 连带子进程一起 taskkill 掉，前端只看到一句「安装失败」，根本不知道
+    // 是被自己另一个操作掐死的。改成明确拒绝 —— 界面上会看到「正有任务在运行」。
     if (child) {
-      killChild();
+      const running = childLabel || "其他任务";
+      const text = `正有任务在运行（${running}），已跳过「${label}」，请等它结束再试。`;
+      // 注意：这里**不能**发 state:"idle" —— 另一个任务还在跑，发 idle 会把它的
+      // busy 状态提前清掉，界面又变成「可以点但点了没反应」。
+      send("tool:log", { label, text: `\n[跳过] ${text}\n` });
+      resolve({ ok: false, code: -2, busy: true, timedOut: false, out: text, error: text });
+      return;
     }
     if (childTimer) clearTimeout(childTimer);
 
@@ -403,12 +412,17 @@ function runPowerShell(args, label, timeoutMs) {
     ps.on("error", (err) => {
       if (childTimer) clearTimeout(childTimer);
       child = null;
+      // 只发 running 不发 idle 是原罪：渲染端的 busy 绑在 state 上，收不到 idle 就
+      // 永远停在 true，注入/还原按钮全部变灰且文案卡在「执行中 …」。
+      send("tool:status", { label, state: "idle" });
       resolve({ ok: false, code: -1, out, timedOut, error: String(err && err.message) });
     });
 
     ps.on("close", (code) => {
       if (childTimer) clearTimeout(childTimer);
       child = null;
+      // 成功、失败、超时被杀都走 close，这里是唯一可靠的收尾出口
+      send("tool:status", { label, state: "idle" });
       resolve({ ok: !timedOut && code === 0, code: code == null ? -1 : code, out, timedOut });
     });
   });

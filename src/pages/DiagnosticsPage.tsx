@@ -7,6 +7,8 @@ type Props = {
   depsResult: DepsResult | null;
   checking: boolean;
   fixing: boolean;
+  /** 全局是否有任务在跑（注入/部署）。有则禁用修复按钮，避免主进程里互杀。 */
+  busy: boolean;
   fixMsg: string;
   fixLog: string;
   onCheck: () => void;
@@ -15,7 +17,7 @@ type Props = {
 
 /** 系统诊断：依赖检测/修复（功能5）+ 故障诊断报告（功能7）。
  *  依赖检测/修复的状态由 App 持有，切页后仍保留，后台修复进程继续时 UI 不丢。 */
-export function DiagnosticsPage({ depsResult, checking, fixing, fixMsg, fixLog, onCheck, onFix }: Props) {
+export function DiagnosticsPage({ depsResult, checking, fixing, busy, fixMsg, fixLog, onCheck, onFix }: Props) {
   const [report, setReport] = useState("");
   const [reporting, setReporting] = useState(false);
   const [copyMsg, setCopyMsg] = useState("");
@@ -48,10 +50,10 @@ export function DiagnosticsPage({ depsResult, checking, fixing, fixMsg, fixLog, 
           </p>
         </div>
         <div className="app-inline-actions">
-          <button type="button" className="btn btn-primary" onClick={onCheck} disabled={checking || fixing}>
+          <button type="button" className="btn btn-primary" onClick={onCheck} disabled={checking || fixing || busy}>
             {checking ? "检测中…" : "开始检测"}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={onFix} disabled={fixing || !depsResult}>
+          <button type="button" className="btn btn-secondary" onClick={onFix} disabled={fixing || !depsResult || busy}>
             {fixing ? "修复中…" : "一键修复缺失依赖"}
           </button>
         </div>

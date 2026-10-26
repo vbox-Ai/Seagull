@@ -162,9 +162,16 @@ export function App() {
       setBusy(true);
       const res = await hs.uninstall(targetId);
       setInstalled(res.installed || {});
-      setStatus(res.ok ? "已卸载 · 技能已一并清除" : "卸载失败（退出码 " + res.code + "）");
-      setLevel(res.ok ? "ok" : "err");
-      setBusy(false);
+      if (res.busy) {
+        // 被主进程闸门挡下：另一个 PowerShell 还在跑。这时**不能** setBusy(false)，
+        // 否则会把那个仍在跑的任务的锁提前解开，界面变成「能点但点了没反应」。
+        setStatus(res.error || "正有任务在运行，请等它结束再卸载");
+        setLevel("err");
+      } else {
+        setStatus(res.ok ? "已卸载 · 技能已一并清除" : "卸载失败（退出码 " + res.code + "）");
+        setLevel(res.ok ? "ok" : "err");
+        setBusy(false);
+      }
       reloadSkills();
       reloadOverview();
     },
@@ -179,7 +186,12 @@ export function App() {
       setBusy(true);
       const res = await hs.install(targetId);
       setInstalled(res.installed || {});
-      if (res.ok) {
+      if (res.busy) {
+        // 主进程里已有 PowerShell 在跑（多半是依赖修复），闸门拒绝了这次注入。
+        // 注意：此时不能解锁 busy —— 那个任务还在跑。
+        setStatus(res.error || "正有任务在运行，请等它结束再注入");
+        setLevel("err");
+      } else if (res.ok) {
         setStatus("已安装 · 提示词与技能库已写入");
         setLevel("ok");
       } else {
@@ -191,7 +203,7 @@ export function App() {
           setToast("记忆文件为空：请先到「提示词管理」导入一份提示词 .md");
         }
       }
-      setBusy(false);
+      if (!res.busy) setBusy(false);
       reloadSkills();
       reloadOverview();
     },
@@ -211,7 +223,11 @@ export function App() {
           : action === "uninstall"
             ? await hs.seepUninstall()
             : await hs.seepVerify();
-      if (res.ok) {
+      if (res.busy) {
+        // 部署/自检也是 PowerShell，被闸门挡下时不能再解锁 busy
+        setStatus(res.error || "正有任务在运行，请等它结束再操作");
+        setLevel("err");
+      } else if (res.ok) {
         setStatus(
           action === "install" ? "Seep 工作台已部署" : action === "uninstall" ? "Seep 工作台已卸载" : "自检完成",
         );
@@ -220,7 +236,7 @@ export function App() {
         setStatus((action === "verify" ? "自检失败" : action === "install" ? "部署失败" : "卸载失败") + "（退出码 " + res.code + "）");
         setLevel("err");
       }
-      setBusy(false);
+      if (!res.busy) setBusy(false);
       hs.seepState().then(setSeep);
       reloadSkills();
     },
@@ -235,9 +251,14 @@ export function App() {
       setBusy(true);
       const res = await hs.restoreMemory(targetId);
       setInstalled(res.installed || {});
-      setStatus(res.ok ? "原始记忆已装回 · 自动重注入已暂停" : "装回失败（退出码 " + res.code + "）");
-      setLevel(res.ok ? "ok" : "err");
-      setBusy(false);
+      if (res.busy) {
+        setStatus(res.error || "正有任务在运行，请等它结束再还原");
+        setLevel("err");
+      } else {
+        setStatus(res.ok ? "原始记忆已装回 · 自动重注入已暂停" : "装回失败（退出码 " + res.code + "）");
+        setLevel(res.ok ? "ok" : "err");
+      }
+      if (!res.busy) setBusy(false);
     },
     [],
   );
@@ -250,9 +271,14 @@ export function App() {
     setBusy(true);
     const res = await hs.doubaoChatInject();
     setInstalled(res.installed || {});
-    setStatus(res.ok ? "破甲对话已开启 · 完整提示词已作为首条消息发送" : "破甲对话注入失败（退出码 " + res.code + "）");
-    setLevel(res.ok ? "ok" : "err");
-    setBusy(false);
+    if (res.busy) {
+      setStatus(res.error || "正有任务在运行，请等它结束再开破甲对话");
+      setLevel("err");
+    } else {
+      setStatus(res.ok ? "破甲对话已开启 · 完整提示词已作为首条消息发送" : "破甲对话注入失败（退出码 " + res.code + "）");
+      setLevel(res.ok ? "ok" : "err");
+    }
+    if (!res.busy) setBusy(false);
     void targetId;
   }, []);
 
@@ -283,6 +309,8 @@ export function App() {
       setStatus("DSH 重启失败：" + (res.error || "未知错误"));
       setLevel("err");
     }
+    // 这条走的是主进程自己的 spawn（不经 runPowerShell 闸门），不会有 busy 拒绝分支。
+    // 不会误解锁的原因：两个重启入口都 disabled={busy}，另一个任务在跑时根本点不到它。
     setBusy(false);
   }, []);
 
@@ -297,24 +325,43 @@ export function App() {
     if (depsFixRunningRef.current) return;
     depsFixRunningRef.current = true;
     setDepsFixRunning(true);
+    // busy 必须自己配对：runPowerShell 只在启动时发 state:"running"，
+    // 渲染端 busy 绑在这个信号上。之前这里没有 setBusy，修完依赖后 busy 会
+    // 一直停在 true，注入/还原/重启全变灰、文案卡在「执行中 …」，只能重启应用。
+    setBusy(true);
+    setLevel("busy");
     setDepsFixMsg("正在修复依赖，请耐心等待（首次修复需要下载工具链，可能需要较长时间）…");
     setDepsFixLog("");
+    // 被闸门拒绝时不能解锁 busy（那个正在跑的任务还要用），用这个标记带到 finally 里
+    let gated = false;
     try {
       const r = await hs.depsFix();
-      if (r.partial && r.depsResults) {
+      if (r.busy) {
+        // 主进程并发闸门拒绝了（同一时刻只允许一个 PowerShell）
+        gated = true;
+        setDepsFixMsg(r.error || "正有任务在运行，请等它结束再试。");
+        setLevel("err");
+      } else if (r.partial && r.depsResults) {
         setDepsFixMsg(
           `部分修复完成：成功 ${r.depsResults.ok.length} 项，失败 ${r.depsResults.failed.length} 项（${r.depsResults.failed.join("、") || "无"}）。可重跑失败项。`,
         );
+        setLevel("ok");
       } else if (r.ok) {
         setDepsFixMsg("依赖修复完成，正在重新检测 …");
+        setLevel("ok");
       } else {
         setDepsFixMsg(
           "依赖修复失败：" + (r.error || r.out?.slice(-300) || "退出码 " + r.code),
         );
+        setLevel("err");
       }
+    } catch (e) {
+      setDepsFixMsg("依赖修复异常：" + String((e && (e as Error).message) || e));
+      setLevel("err");
     } finally {
       depsFixRunningRef.current = false;
       setDepsFixRunning(false);
+      if (!gated) setBusy(false);
       // 修复完成后刷新共享检测结果（切页后回来也能看到最新状态）
       await runDepsCheck();
     }
@@ -396,6 +443,8 @@ export function App() {
                 engines={engines}
                 reaProgress={reaProgress}
                 busy={busy}
+                fixing={depsFixRunning}
+                fixMsg={depsFixMsg}
                 status={status}
                 level={level}
                 logText={logText}
@@ -481,6 +530,7 @@ export function App() {
                     depsResult={depsResult}
                     checking={depsChecking}
                     fixing={depsFixRunning}
+                    busy={busy}
                     fixMsg={depsFixMsg}
                     fixLog={depsFixLog}
                     onCheck={runDepsCheck}
