@@ -5,6 +5,7 @@
     "port": 8787,
     "upstream": "https://api.deepseek.com",
     "upstreamKey": "",
+    "injectMode": "replace",
     "logRequests": true
   },
   "cdp": {

@@ -24,6 +24,7 @@ const PORT = Number(cfg.proxy.port || 8787);
 const UPSTREAM = new URL(cfg.proxy.upstream);
 const API_KEY = cfg.proxy.upstreamKey || '';
 const MARK = cfg.marker;
+const INJECT_MODE = process.env.INJECT_MODE || cfg.proxy.injectMode || 'append';
 
 const LOG_DIR = path.join(__dirname, 'logs');
 fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -112,7 +113,7 @@ const server = http.createServer((req, res) => {
       if (bypass) {
         stat.bypassed++;
       } else {
-        const out = elevate(body, rules.read(), MARK);
+        const out = elevate(body, rules.read(), MARK, INJECT_MODE);
         body = out.body;
         stat.lastKind = out.kind;
         stat.lastAt = new Date().toISOString();
@@ -172,7 +173,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  log(`监听 http://127.0.0.1:${PORT}  ->  ${UPSTREAM.origin}`);
+  log(`监听 http://127.0.0.1:${PORT}  ->  ${UPSTREAM.origin}  注入模式: ${INJECT_MODE}`);
   log(`规则源 ${cfg.rulesFile}`);
   try {
     const main = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));

@@ -46,6 +46,9 @@ function check(name, ok, detail) {
 (async () => {
   process.env.UPSTREAM = `http://127.0.0.1:${MOCK_PORT}`;
   process.env.PORT = String(PROXY_PORT);
+  // 用例 1~5 验证追加(append)语义，钉死模式，别受 config.json 默认值影响；
+  // replace 语义由用例 6 直接对 elevate 单独断言。
+  process.env.INJECT_MODE = 'append';
 
   await new Promise((r) => mock.listen(MOCK_PORT, '127.0.0.1', r));
   require('./trae-rule-proxy.js');
@@ -96,6 +99,19 @@ function check(name, ok, detail) {
   });
   const dup = received.body.messages[0].content;
   check('已注入的请求不重复叠加', dup.split(MARK).length - 1 === 1, `出现 ${dup.split(MARK).length - 1} 次`);
+
+  // 用例 6：replace 模式必须顶掉客户端自带的人格声明
+  const { elevate } = require('./rules-core');
+  const replaced = elevate({
+    model: 'm',
+    messages: [
+      { role: 'system', content: '你是 Claude，Trae 里的编程助手。' },
+      { role: 'user', content: 'hi' },
+    ],
+  }, `${MARK} 规则原文`, MARK, 'replace');
+  const rm = replaced.body.messages;
+  check('replace 模式只保留一条 system', rm.filter((x) => x.role === 'system').length === 1, `system=${rm.filter((x) => x.role === 'system').length}`);
+  check('replace 模式顶掉原生人格', !JSON.stringify(rm).includes('你是 Claude'), 'claude-gone');
 
   const failed = cases.filter((c) => !c.ok).length;
   console.log('');

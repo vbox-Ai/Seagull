@@ -94,6 +94,16 @@
         "to": "memory"
       },
       {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "**/*",
+          "!out/**",
+          "!logs/**",
+          "!config.local.json"
+        ]
+      },
+      {
         "from": "build/icon-256.png",
         "to": "icon.png"
       }

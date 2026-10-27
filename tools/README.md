@@ -6,7 +6,7 @@
 
 | 方案 | 解决的环节 | 改动点 | 是否需要 Trae 支持自定义模型 | 状态 |
 |---|---|---|---|---|
-| **A** 本地代理升权 | 请求里的 role 是 user 还是 system | 请求体（传输中） | ✅ 需要 | 已自测 9/9 通过 |
+| **A** 本地代理升权 | 请求里的 role 是 user 还是 system | 请求体（传输中） | ✅ 需要 | 已自测 11/11 通过 |
 | **B** CDP 传输层改写 | 同上，但走调试协议 | 请求体（发出前） | ❌ 不需要 | 待你在真机跑探测 |
 | **C** 本地模型 / 自建网关 | 整条链路 | 模型定义（Modelfile） | ✅ 需要（指向本地） | 脚本就绪，**本机未装 Ollama** |
 | **D** 分层加载 | 常驻多少、按需多少 | 文件结构（不动措辞） | ❌ 不需要 | 已产出 12864 / 32324 字符 |
@@ -36,6 +36,8 @@ tools/
 ├── selftest-proxy.js        【A】自动化验收（不花 token）
 ├── probe-model-endpoint.js  【B】探测请求出口（先跑这个）
 ├── cdp-inject-rules.js      【B】Fetch 拦截注入
+├── capture-payload.js       【取证】抓一次真实请求体，看规则落在哪一层
+├── set-endpoint.js          【接入器】把 Trae 自定义模型 base_url 改指向升权网关
 ├── split-rules.js           【D】分层拆解
 ├── local-gateway.ps1        【C】Ollama / LM Studio 网关
 ├── start-proxy.bat          【A】一键启动
@@ -73,7 +75,20 @@ node selftest-proxy.js
 }
 ```
 
-也可以用环境变量覆盖（优先级更高）：`UPSTREAM` / `UPSTREAM_KEY` / `PORT`。
+也可以用环境变量覆盖（优先级更高）：`UPSTREAM` / `UPSTREAM_KEY` / `PORT` / `INJECT_MODE`。
+
+### 3.2.1 注入模式：append 还是 replace
+
+| 模式 | 行为 | 适用 |
+|---|---|---|
+| `append`（默认） | 规则拼在客户端自带 system **前面** | 客户端没有强身份声明时 |
+| `replace` | 用规则**整体替换** system，客户端身份声明被顶掉 | **Trae 场景必用这个** |
+
+原因：Trae 的服务端 system prompt 写死了"你是 Claude / 编程助手"。追加模式下规则排在它后面，模型按层级取高优先级 → 规则变成"参考资料"。`replace` 才能把身份位抢过来。
+
+```bat
+set INJECT_MODE=replace && node trae-rule-proxy.js
+```
 
 ### 3.3 起代理
 
@@ -110,6 +125,27 @@ start-proxy.bat
 | `lastKind` 是 `none` | 请求体没有 messages 字段 | 该客户端用的是别的协议，看日志里的 path |
 | 上游 401 | key 没配或写错 | 改 `upstreamKey`，重启代理 |
 | 回复变慢 | 45KB 每轮都带 | 用方案 D 的 `core.md` 替换规则文件，降到 12.8K |
+
+### 3.7 接入器：把 Trae 指到网关（改了就能破甲）
+
+起代理只是"升权层就绪"，还得让 Trae 的自定义模型把请求发过来。`set-endpoint.js` 自动改 Trae 的 `state.vscdb`（SQLite），把所有自定义模型的 base_url 对齐网关：
+
+```bat
+node set-endpoint.js --status        # 只看现状，不改
+node set-endpoint.js                 # 改 base_url 指向默认网关 8787
+node set-endpoint.js --gateway http://127.0.0.1:8787/v1/chat/completions
+```
+
+| 说明 | 值 |
+|---|---|
+| 需要 | Node 22+（自带 node:sqlite） |
+| 改什么 | Trae 里所有 `custom_openai_compatible` 模型的 `base_url` |
+| 幂等 | 已指向网关的跳过，重跑即覆盖（版本升级后重跑一次即可） |
+| 快照 | 改前自动落 `state.vscdb.set-endpoint.bak.<时间戳>`（仅安全拷贝） |
+
+没有自定义模型时，脚本会打印一步指引：先在 Trae 里手动加一个（Base URL 填网关地址），再跑一次对齐。改完重启 Trae，自定义模型即走升权网关。
+
+> 完整链路：`install-trae.ps1`（写规则）→ `trae-rule-proxy.js`（升权）→ `set-endpoint.js`（指路）→ `config.local.json`（配上游 key）。
 
 ---
 
@@ -229,7 +265,21 @@ node split-rules.js --budget 16500
 
 ---
 
-## 七、验收（别看"你是不是在演"）
+## 七、取证（遇到"注入了但不执行"必跑）
+
+```bat
+node capture-payload.js
+```
+
+然后在 Trae 里发一句「你好」。脚本会落盘 `logs/payload-*.json` 并打印结构摘要。看三件事：
+
+| 看什么 | 说明 | 结论 |
+|---|---|---|
+| 规则在第几条消息、什么 role | `system` / `user` / `context` | 在 user 或 context 位 → 只会被当资料 |
+| system 里有没有别人格 | 例如 "You are Claude" | 有 → 身份冲突，规则必输，要用 `replace` |
+| 规则被什么标签包裹 | `<rules>` `<context>` 之类 | 被包裹 = 服务端已标注为不可信内容 |
+
+## 八、验收（别看"你是不是在演"）
 
 | 实验 | 做法 | 通过标准 |
 |---|---|---|
@@ -241,7 +291,7 @@ node split-rules.js --budget 16500
 
 ---
 
-## 八、边界
+## 九、边界
 
 - 不改规则文件里的任何关键词；
 - 代理只监听 `127.0.0.1`，不对外暴露；

@@ -102,22 +102,39 @@ class RuleSource {
 }
 
 // 统一注入：OpenAI(messages) 与 Anthropic(system) 两种请求形态都覆盖
-function elevate(body, text, marker) {
+// mode:
+//   append  —— 追加到已有 system 前面（默认，保留客户端原生提示词）
+//   replace —— 用规则整体替换 system（客户端自带的身份声明会被顶掉）
+function elevate(body, text, marker, mode) {
+  const m = mode || 'append';
   if (!text) return { body, kind: 'empty' };
 
+  const replaceMode = m === 'replace';
+
   if (typeof body.system === 'string') {
-    if (body.system.includes(marker)) return { body, kind: 'skip' };
-    body.system = text + '\n\n' + body.system;
-    return { body, kind: 'anthropic' };
+    if (!replaceMode && body.system.includes(marker)) return { body, kind: 'skip' };
+    body.system = replaceMode ? text : text + '\n\n' + body.system;
+    return { body, kind: replaceMode ? 'anthropic-replace' : 'anthropic' };
   }
 
   if (Array.isArray(body.system)) {
-    if (JSON.stringify(body.system).includes(marker)) return { body, kind: 'skip' };
-    body.system.unshift({ type: 'text', text });
-    return { body, kind: 'anthropic-array' };
+    if (!replaceMode && JSON.stringify(body.system).includes(marker)) return { body, kind: 'skip' };
+    if (replaceMode) body.system = [{ type: 'text', text }];
+    else body.system.unshift({ type: 'text', text });
+    return { body, kind: replaceMode ? 'anthropic-array-replace' : 'anthropic-array' };
   }
 
   if (Array.isArray(body.messages)) {
+    if (replaceMode) {
+      // 去掉客户端自带的全部 system，换成规则；其余消息保持原序
+      if (body.messages[0] && body.messages[0].role === 'system' && body.messages[0].content === text) {
+        return { body, kind: 'skip' };
+      }
+      const rest = body.messages.filter((x) => x && x.role !== 'system');
+      body.messages = [{ role: 'system', content: text }, ...rest];
+      return { body, kind: 'openai-replace' };
+    }
+
     if (JSON.stringify(body.messages).includes(marker)) return { body, kind: 'skip' };
     const first = body.messages[0];
     if (first && first.role === 'system' && typeof first.content === 'string') {
