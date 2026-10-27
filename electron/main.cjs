@@ -34,6 +34,7 @@ let quitting = false;
 let child = null; // 当前运行的 powershell
 let childTimer = null;
 let childLabel = "";
+let gatewayChild = null; // 升权网关子进程（Electron 内置 Node 跑的 trae-rule-proxy.js）
 
 // ---------- 路径 ----------
 
@@ -438,6 +439,9 @@ function loadState() {
     meta: st.meta || {},
     history: Array.isArray(st.history) ? st.history : [],
     activePrompt: st.activePrompt || "",
+    gateway: st.gateway && typeof st.gateway === "object"
+      ? { enabled: st.gateway.enabled !== false, port: Number(st.gateway.port) || 8787 }
+      : { enabled: true, port: 8787 },
   };
 }
 
@@ -1597,6 +1601,93 @@ function fetchRemoteConfig(url) {
   });
 }
 
+// ---------- 升权网关（平台无关引擎，目前只有 Trae 接入器） ----------
+
+/** 升权网关脚本路径：打包后 resources/tools/trae-rule-proxy.js，开发时 <工具目录>/tools/。 */
+function gatewayScriptPath() {
+  return p("tools", "trae-rule-proxy.js");
+}
+
+/** 网关状态：开关、端口、子进程是否存活。 */
+function gatewayState() {
+  const cfg = loadState().gateway;
+  return {
+    enabled: cfg.enabled,
+    port: cfg.port,
+    running: Boolean(gatewayChild) && !gatewayChild.killed,
+    pid: gatewayChild && gatewayChild.pid ? gatewayChild.pid : null,
+  };
+}
+
+/**
+   用 Electron 内置 Node 拉起升权网关（ELECTRON_RUN_AS_NODE=1），
+   用户机器不用装 Node。监听 127.0.0.1，只做被动转发，无主动劫持。
+*/
+function startGateway() {
+  if (gatewayChild && !gatewayChild.killed) return gatewayState();
+  const cfg = loadState().gateway;
+  const script = gatewayScriptPath();
+  if (!fs.existsSync(script)) {
+    return { ...gatewayState(), error: "升权网关脚本缺失：" + script };
+  }
+  const child = spawn(
+    process.execPath,
+    [script],
+    {
+      cwd: p("tools"),
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+        PORT: String(cfg.port),
+        INJECT_MODE: "replace",
+      },
+    },
+  );
+  gatewayChild = child;
+  child.stdout && child.stdout.on("data", (buf) => {
+    const line = buf.toString("utf8").trim();
+    if (line) console.log("[gateway]", line);
+  });
+  child.stderr && child.stderr.on("data", (buf) => {
+    const line = buf.toString("utf8").trim();
+    if (line) console.log("[gateway:err]", line);
+  });
+  child.on("error", (err) => {
+    gatewayChild = null;
+    console.log("[gateway] 启动失败:", String(err && err.message));
+  });
+  child.on("exit", (code, signal) => {
+    gatewayChild = null;
+    console.log("[gateway] 退出 code=" + code + " signal=" + (signal || ""));
+  });
+  return gatewayState();
+}
+
+function stopGateway() {
+  if (!gatewayChild) return gatewayState();
+  const pid = gatewayChild.pid;
+  gatewayChild = null;
+  try {
+    if (pid) process.kill(pid);
+  } catch {
+    /* 已退出 */
+  }
+  return gatewayState();
+}
+
+/** 开关切换：写状态 + 按需起停。默认开，只影响被接入器显式指向 8787 的平台。 */
+function setGateway(enabled) {
+  const st = loadState();
+  const on = Boolean(enabled);
+  st.gateway.enabled = on;
+  saveState({ gateway: st.gateway });
+  if (on) startGateway();
+  else stopGateway();
+  return gatewayState();
+}
+
 // ---------- IPC ----------
 
 // ---------- 单平台操作（单点 IPC 与批量 IPC 共用） ----------
@@ -1803,6 +1894,10 @@ function registerIpc() {
   ipcMain.handle("tool:engines:state", () => ({ seep: seepState(), rea: reaState() }));
   ipcMain.handle("tool:rea:install", () => reaInstall());
   ipcMain.handle("tool:rea:uninstall", () => reaUninstall());
+
+  // ---- 升权网关开关（Trae 破甲链路的最后一段） ----
+  ipcMain.handle("gateway:state", () => gatewayState());
+  ipcMain.handle("gateway:set", (_e, enabled) => setGateway(enabled));
 
   // ---- 功能7：故障诊断报告 ----
   ipcMain.handle("tool:diagnose", () => diagnose());
@@ -2413,6 +2508,8 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc();
     createWindow();
     setupTray();
+    // 默认开：被动监听 8787，只有被接入器显式指路的平台才会经过它
+    if (loadState().gateway.enabled) startGateway();
   });
 
   app.on("window-all-closed", () => {
@@ -2423,6 +2520,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     quitting = true;
     killChild();
+    stopGateway();
     if (tray) {
       tray.destroy();
       tray = null;

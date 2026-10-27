@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { StatusLevel } from "../App";
-import { hs, type Dep, type ReaProgress, type ReaState, type SeepState } from "../lib/hs";
+import { hs, type Dep, type GatewayState, type ReaProgress, type ReaState, type SeepState } from "../lib/hs";
 import { cx } from "../lib/cx";
 import { LogView } from "../components/LogView";
 import { SeepPage } from "./SeepPage";
@@ -47,9 +47,12 @@ export function EnginesPage({
   const [reaProgress, setReaProgress] = useState<ReaProgress | null>(null);
   const [report, setReport] = useState("");
   const [reportMsg, setReportMsg] = useState("");
+  const [gateway, setGateway] = useState<GatewayState | null>(null);
+  const [gatewayBusy, setGatewayBusy] = useState(false);
 
   useEffect(() => {
     hs.enginesState().then((s) => setRea(s.rea));
+    hs.gatewayState().then(setGateway);
     const off = hs.onReaProgress((p) => {
       setReaProgress(p);
       // 完成 / 失败收尾：进度条短暂停留后立即消失
@@ -59,6 +62,14 @@ export function EnginesPage({
     });
     return off;
   }, []);
+
+  const toggleGateway = async () => {
+    if (!gateway || gatewayBusy) return;
+    setGatewayBusy(true);
+    const next = await hs.gatewaySet(!gateway.enabled);
+    setGateway(next);
+    setGatewayBusy(false);
+  };
 
   const refreshRea = () => hs.enginesState().then((s) => setRea(s.rea));
 
@@ -140,6 +151,32 @@ export function EnginesPage({
             </div>
           </div>
         )}
+      </div>
+
+      <div className="settings-card-block">
+        <div className="settings-card-heading-row">
+          <div>
+            <h2 className="settings-card-heading">升权网关</h2>
+            <p className="settings-card-description">
+              平台无关的破甲引擎：被动监听 127.0.0.1，把客户端自带身份替换成海鸥规则。
+              默认开启，只影响被接入器显式指向该端口的平台（当前仅 Trae）。
+            </p>
+          </div>
+          <span className={cx("badge", gateway?.running ? "badge-success" : "badge-neutral")}>
+            {gateway?.running ? `运行中 · ${gateway.port}` : gateway?.enabled ? `未运行 · ${gateway.port}` : "已关闭"}
+          </span>
+        </div>
+        <div className="app-inline-actions">
+          <button
+            type="button"
+            className={cx("btn", gateway?.enabled ? "btn-ghost" : "btn-primary")}
+            disabled={gatewayBusy || !gateway}
+            onClick={toggleGateway}
+          >
+            {gatewayBusy ? "切换中 …" : gateway?.enabled ? "关闭网关" : "开启网关"}
+          </button>
+        </div>
+        {gateway?.error && <p className="settings-card-description">{gateway.error}</p>}
       </div>
 
       <div className="settings-card-block">

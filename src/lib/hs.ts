@@ -69,6 +69,15 @@ export type ReaState = { installed: boolean; version: string; downloading: boole
 export type EnginesState = { seep: SeepState; rea: ReaState };
 export type ReaProgress = { pct: number; label: string; done?: boolean; failed?: boolean };
 
+// ---- 升权网关开关（Trae 破甲链路） ----
+export type GatewayState = {
+  enabled: boolean;
+  port: number;
+  running: boolean;
+  pid: number | null;
+  error?: string;
+};
+
 /** 单个提示词文件的导入结果（zip 一个来源可产出多条）。 */
 export type PromptImportItem = { ok: boolean; name?: string; chars?: number; error?: string; action?: string };
 /** 与库内已有提示词冲突的候选：同名文件或内容重复。 */
@@ -149,6 +158,9 @@ export type HsApi = {
   enginesState(): Promise<EnginesState>;
   reaInstall(): Promise<InstallResult>;
   reaUninstall(): Promise<InstallResult>;
+  /** 升权网关状态与开关（默认开，被动监听 8787）。 */
+  gatewayState(): Promise<GatewayState>;
+  gatewaySet(enabled: boolean): Promise<GatewayState>;
   diagnose(): Promise<string>;
   /** 通用文本导出：弹保存框写入文件（诊断报告导出等）。 */
   saveText(defaultName: string, content: string): Promise<{ ok: boolean; path?: string; error?: string }>;

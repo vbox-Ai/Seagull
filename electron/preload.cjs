@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld("hs", {
   enginesState: () => ipcRenderer.invoke("tool:engines:state"),
   reaInstall: () => ipcRenderer.invoke("tool:rea:install"),
   reaUninstall: () => ipcRenderer.invoke("tool:rea:uninstall"),
+  // 升权网关开关（Trae 破甲链路）
+  gatewayState: () => ipcRenderer.invoke("gateway:state"),
+  gatewaySet: (enabled) => ipcRenderer.invoke("gateway:set", enabled),
   // 功能7：故障诊断报告
   diagnose: () => ipcRenderer.invoke("tool:diagnose"),
   // 通用文本导出（诊断报告导出等）
