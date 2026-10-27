@@ -681,16 +681,28 @@ async function importSkillSources(sources) {
   for (const src of sources) {
     let r = importSkillDir(src, null);
     if (r.conflict) {
-      const box = await dialog.showMessageBox(win, {
-        type: "question",
-        title: "技能重名",
-        message: `技能「${r.name}」已存在`,
-        detail: `点「改名」自动改名并注入（建议名：${r.suggested}），点「取消」跳过这个技能。`,
-        buttons: ["改名", "取消"],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      });
+      // 窗口可能收进托盘后已销毁，此时不带父窗口弹（否则 showMessageBox 直接抛错）。
+      const box = await (win && !win.isDestroyed()
+        ? dialog.showMessageBox(win, {
+            type: "question",
+            title: "技能重名",
+            message: `技能「${r.name}」已存在`,
+            detail: `点「改名」自动改名并注入（建议名：${r.suggested}），点「取消」跳过这个技能。`,
+            buttons: ["改名", "取消"],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+          })
+        : dialog.showMessageBox({
+            type: "question",
+            title: "技能重名",
+            message: `技能「${r.name}」已存在`,
+            detail: `点「改名」自动改名并注入（建议名：${r.suggested}），点「取消」跳过这个技能。`,
+            buttons: ["改名", "取消"],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+          }));
       if (box.response === 0) {
         r = importSkillDir(src, "rename");
         if (r.ok) imported.push(r.name);
@@ -1204,12 +1216,59 @@ function writePromptFile(name, text, targetName) {
 }
 
 /** 用系统 tar（Win10+ 的 bsdtar 支持 zip）把 zip 解到临时目录，返回解压目录。 */
+/**
+   解压 zip 到临时目录。优先 tar（Win10+ 自带 bsdtar，支持 zip），
+   两类失败都会落到 Expand-Archive 兜底：
+   * PATH 里的 tar 是 Git/MSYS 的 GNU tar —— 不认 zip，报 "Unrecognized archive"
+   * 老系统没有 tar（ENOENT）
+   兜底也失败才报错，且把两边的原始错误都带回来。
+*/
 function extractZipToTemp(zipPath) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "seagull-prompt-"));
+  const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+    const viaExpandArchive = (tarErr) => {
+      const ps = spawn(
+        "powershell.exe",
+        ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${q(zipPath)} -DestinationPath ${q(tmp)} -Force`],
+        { windowsHide: true },
+      );
+      let psErr = "";
+      ps.stderr && ps.stderr.on("data", (b) => {
+        psErr += b.toString("utf8");
+      });
+      ps.on("close", (code) => {
+        if (code === 0) done(() => resolve(tmp));
+        else {
+          done(() =>
+            reject(
+              new Error(
+                `tar: ${(tarErr || "退出码非0").trim() || "退出码非0"}；Expand-Archive: ${(psErr || "退出码 " + code).trim()}`,
+              ),
+            ),
+          );
+        }
+      });
+      ps.on("error", (e) =>
+        done(() => reject(new Error(`tar: ${(tarErr || "不可用").trim()}；Expand-Archive: ${String(e && e.message)}`))),
+      );
+    };
     const t = spawn("tar", ["-xf", zipPath, "-C", tmp], { windowsHide: true });
-    t.on("close", (code) => (code === 0 ? resolve(tmp) : reject(new Error("tar 解压退出码 " + code))));
-    t.on("error", reject);
+    let tarErr = "";
+    t.stderr && t.stderr.on("data", (b) => {
+      tarErr += b.toString("utf8");
+    });
+    t.on("close", (code) => {
+      if (code === 0) done(() => resolve(tmp));
+      else viaExpandArchive(`退出码 ${code} ${tarErr.trim()}`);
+    });
+    t.on("error", (e) => viaExpandArchive(String(e && e.message)));
   });
 }
 
@@ -1355,6 +1414,18 @@ function checkDeps() {
     "$out = foreach($n in $names){ " +
     "  $path = ''; $ok = $false; $hint = ''; " +
     "  if ($bundled.ContainsKey($n) -and (Test-Path -LiteralPath $bundled[$n])) { $path = $bundled[$n]; $ok = $true } " +
+    "  if (-not $ok -and ($n -eq 'radare2' -or $n -eq 'r2')) { " +
+    // 旧版修复脚本解压出 radare2-<版本>-w64 嵌套目录；兼容两种布局
+    "    $nested = Get-ChildItem -LiteralPath (Join-Path $safe 'radare2') -Directory -ErrorAction SilentlyContinue | " +
+    "      ForEach-Object { Join-Path $_.FullName 'bin\\radare2.exe' } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1; " +
+    "    if ($nested) { $path = $nested; $ok = $true } " +
+    "  } " +
+    "  if (-not $ok -and $n -eq 'nmap') { " +
+    // winget 装完只写机器 PATH，已运行进程看不见；直接探已知安装路径
+    "    foreach ($c in @((Join-Path $env:ProgramFiles 'Nmap\\nmap.exe'), (Join-Path ${env:ProgramFiles(x86)} 'Nmap\\nmap.exe'))) { " +
+    "      if ($c -and (Test-Path -LiteralPath $c)) { $path = $c; $ok = $true; break } " +
+    "    } " +
+    "  } " +
     "  if (-not $ok -and ($n -eq 'python' -or $n -eq 'python3')) { " +
     "    $r = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1; " +
     "    if ($r -and $r.Source -match 'WindowsApps') { $path = $r.Source; $hint = 'WindowsApps 占位符，请装官方 Python 或关闭应用执行别名' } " +
@@ -2066,42 +2137,61 @@ function registerIpc() {
   ipcMain.handle("tool:skills:layers", () => skillLayers());
   ipcMain.handle("tool:skills:save", (_e, disabled) => writeDisabledSkills(disabled || []));
 
-  /** 导入自定义技能：payload.kind = "zip" | "dir"（默认 zip）。 */
+  /** 导入自定义技能：payload.kind = "zip" | "dir"（默认 zip）。任何异常都落成结果对象，
+      不允许 reject —— 渲染层一旦收到 rejection，busy 永远不会复位，按钮永久变灰。 */
   ipcMain.handle("tool:skills:import", async (_e, payload) => {
-    const kind = payload && payload.kind === "dir" ? "dir" : "zip";
-    if (kind === "zip") {
+    try {
+      const kind = payload && payload.kind === "dir" ? "dir" : "zip";
+      if (kind === "zip") {
+        const r = await dialog.showOpenDialog(win, {
+          title: "导入技能（选择 .zip 技能包）",
+          filters: [{ name: "技能包 zip", extensions: ["zip"] }],
+          properties: ["openFile", "multiSelections"],
+        });
+        if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消" };
+        const sources = [];
+        const tmpDirs = [];
+        const errors = [];
+        for (const z of r.filePaths) {
+          try {
+            const tmp = await extractZipToTemp(z);
+            tmpDirs.push(tmp);
+            const found = collectSkillDirs(tmp);
+            if (found.length === 0) errors.push(`${path.basename(z)}：包里没有含 SKILL.md 的技能目录`);
+            for (const d of found) sources.push(d);
+          } catch (e) {
+            errors.push(`${path.basename(z)}：${String(e && e.message)}`);
+          }
+        }
+        if (sources.length === 0) {
+          return {
+            ok: false,
+            error: errors.length ? errors.join("；") : "压缩包里没有含 SKILL.md 的技能目录",
+          };
+        }
+        const result = await importSkillSources(sources);
+        for (const t of tmpDirs) {
+          try { fs.rmSync(t, { recursive: true, force: true }); } catch { /* 临时目录留着无妨 */ }
+        }
+        // 单个 zip 解压失败时把原因带出去，别让用户只看到"导入 0 个"
+        if (errors.length) result.errors = [...(result.errors || []), ...errors];
+        return result;
+      }
       const r = await dialog.showOpenDialog(win, {
-        title: "导入技能（选择 .zip 技能包）",
-        filters: [{ name: "技能包 zip", extensions: ["zip"] }],
-        properties: ["openFile", "multiSelections"],
+        title: "导入技能（选择含 SKILL.md 的技能文件夹）",
+        properties: ["openDirectory", "multiSelections"],
       });
       if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消" };
       const sources = [];
-      const tmpDirs = [];
-      for (const z of r.filePaths) {
-        const tmp = await extractZipToTemp(z);
-        tmpDirs.push(tmp);
-        for (const d of collectSkillDirs(tmp)) sources.push(d);
+      for (const d of r.filePaths) {
+        if (fs.existsSync(path.join(d, "SKILL.md"))) sources.push(d);
+        else for (const s of collectSkillDirs(d)) sources.push(s);
       }
-      const result = await importSkillSources(sources);
-      for (const t of tmpDirs) {
-        try { fs.rmSync(t, { recursive: true, force: true }); } catch { /* 临时目录留着无妨 */ }
-      }
-      if (sources.length === 0) return { ok: false, error: "压缩包里没有含 SKILL.md 的技能目录" };
-      return result;
+      if (sources.length === 0) return { ok: false, error: "所选文件夹里没有含 SKILL.md 的技能目录" };
+      return await importSkillSources(sources);
+    } catch (e) {
+      return { ok: false, error: "导入失败：" + String(e && e.message) };
     }
-    const r = await dialog.showOpenDialog(win, {
-      title: "导入技能（选择含 SKILL.md 的技能文件夹）",
-      properties: ["openDirectory", "multiSelections"],
-    });
-    if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消" };
-    const sources = [];
-    for (const d of r.filePaths) {
-      if (fs.existsSync(path.join(d, "SKILL.md"))) sources.push(d);
-      else for (const s of collectSkillDirs(d)) sources.push(s);
-    }
-    if (sources.length === 0) return { ok: false, error: "所选文件夹里没有含 SKILL.md 的技能目录" };
-    return importSkillSources(sources);
   });
 
   /** 删除自定义技能（目录 + 自定义源 + config.toml 禁用块）。 */

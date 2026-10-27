@@ -96,6 +96,19 @@ function Expand-ZipTo {
     Expand-Archive -Path $Zip -DestinationPath $Dest -Force
 }
 
+# GitHub release zip 常带顶层版本目录（如 radare2-6.2.4-w64\bin\...）。
+# 不上提的话，checkDeps 探测的 <dst>\bin\... 与 PATH 追加的 <dst>\bin 全部落空，
+# 结果就是"修复成功但依赖检测仍显示未安装"。
+function Move-UpSingleDir {
+    param([string]$Dest)
+    $children = @(Get-ChildItem -LiteralPath $Dest -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
+        $inner = $children[0].FullName
+        Get-ChildItem -LiteralPath $inner -Force | Move-Item -Destination $Dest -Force
+        Remove-Item -LiteralPath $inner -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
+
 function Should-Run($name) {
     if ($Only.Count -eq 0) { return $true }
     return ($Only -contains $name)
@@ -105,7 +118,7 @@ $results = @{}
 
 # ---------------------------------------------------------------- jadx
 if (Should-Run 'jadx') {
-    Write-Host "`n  [1/6] jadx (Java 反编译)" -ForegroundColor Cyan
+    Write-Host "`n  [1/12] jadx (Java 反编译)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir 'jadx'
     if ((Test-Path $dst) -and -not $Force) { Write-Ok '已存在，跳过'; $results['jadx'] = $true }
     else {
@@ -115,6 +128,7 @@ if (Should-Run 'jadx') {
             if (Get-FileWithMirror -Url $a.Url -OutFile $zip) {
                 if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
                 Expand-ZipTo -Zip $zip -Dest $dst
+                Move-UpSingleDir -Dest $dst
                 Remove-Item $zip -Force -ErrorAction SilentlyContinue
                 Write-Ok "jadx $($a.Tag) -> tools\jadx"
                 $results['jadx'] = $true
@@ -125,7 +139,7 @@ if (Should-Run 'jadx') {
 
 # ---------------------------------------------------------------- radare2
 if (Should-Run 'radare2') {
-    Write-Host "`n  [2/6] radare2 (二进制逆向)" -ForegroundColor Cyan
+    Write-Host "`n  [2/12] radare2 (二进制逆向)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir 'radare2'
     if ((Test-Path $dst) -and -not $Force) { Write-Ok '已存在，跳过'; $results['radare2'] = $true }
     else {
@@ -135,6 +149,7 @@ if (Should-Run 'radare2') {
             if (Get-FileWithMirror -Url $a.Url -OutFile $zip) {
                 if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
                 Expand-ZipTo -Zip $zip -Dest $dst
+                Move-UpSingleDir -Dest $dst
                 Remove-Item $zip -Force -ErrorAction SilentlyContinue
                 Write-Ok "radare2 $($a.Tag) -> tools\radare2"
                 $results['radare2'] = $true
@@ -145,7 +160,7 @@ if (Should-Run 'radare2') {
 
 # ---------------------------------------------------------------- apktool
 if (Should-Run 'apktool') {
-    Write-Host "`n  [3/6] apktool (APK 解包/重打包)" -ForegroundColor Cyan
+    Write-Host "`n  [3/12] apktool (APK 解包/重打包)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir 'apktool'
     if ((Test-Path $dst) -and -not $Force) { Write-Ok '已存在，跳过'; $results['apktool'] = $true }
     else {
@@ -169,7 +184,7 @@ if "%JAVA_HOME%"=="" (set JAVA=java) else (set JAVA="%JAVA_HOME%\bin\java.exe")
 
 # ---------------------------------------------------------------- 7z / 7za
 if (Should-Run '7z') {
-    Write-Host "`n  [4/10] 7-Zip (解包)" -ForegroundColor Cyan
+    Write-Host "`n  [4/12] 7-Zip (解包)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir '7zip'
     if ((Test-Path (Join-Path $dst '7z.exe')) -and -not $Force) { Write-Ok '已存在，跳过'; $results['7z'] = $true }
     else {
@@ -202,7 +217,7 @@ if (Should-Run '7z') {
 
 # ---------------------------------------------------------------- git
 if (Should-Run 'git') {
-    Write-Host "`n  [5/10] git (版本控制)" -ForegroundColor Cyan
+    Write-Host "`n  [5/12] git (版本控制)" -ForegroundColor Cyan
     if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok '已存在，跳过'; $results['git'] = $true }
     else {
         try {
@@ -221,7 +236,7 @@ if (Should-Run 'git') {
 
 # ---------------------------------------------------------------- frida
 if (Should-Run 'frida') {
-    Write-Host "`n  [6/10] frida (动态插桩)" -ForegroundColor Cyan
+    Write-Host "`n  [6/12] frida (动态插桩)" -ForegroundColor Cyan
     if (Get-Command frida -ErrorAction SilentlyContinue) { Write-Ok '已存在，跳过'; $results['frida'] = $true }
     else {
         try {
@@ -240,7 +255,7 @@ if (Should-Run 'frida') {
 
 # ---------------------------------------------------------------- python
 if (Should-Run 'python') {
-    Write-Host "`n  [7/10] Python (脚本运行时)" -ForegroundColor Cyan
+    Write-Host "`n  [7/12] Python (脚本运行时)" -ForegroundColor Cyan
     $py = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
     # WindowsApps\python.exe 是 Store 占位 stub，一执行就弹商店，不算真 Python
     if ($py -and $py.Source -match 'WindowsApps') {
@@ -263,9 +278,62 @@ if (Should-Run 'python') {
     }
 }
 
+# ---------------------------------------------------------------- nmap
+if (Should-Run 'nmap') {
+    Write-Host "`n  [8/12] nmap (端口扫描)" -ForegroundColor Cyan
+    $nmapExe = @(
+        (Join-Path ${env:ProgramFiles} 'Nmap\nmap.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Nmap\nmap.exe')
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($nmapExe -or (Get-Command nmap -ErrorAction SilentlyContinue)) { Write-Ok '已存在，跳过'; $results['nmap'] = $true }
+    else {
+        try {
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if (-not $winget) { throw 'winget 不可用，请到 https://nmap.org/download.html 手动安装' }
+            Write-Info 'winget install Insecure.Nmap ...'
+            & winget install --id Insecure.Nmap --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            if ((Test-Path (Join-Path ${env:ProgramFiles} 'Nmap\nmap.exe')) -or (Get-Command nmap -ErrorAction SilentlyContinue)) {
+                Write-Ok 'nmap 安装完成'
+                $results['nmap'] = $true
+            } else {
+                Write-Warn 'nmap 已发起安装但未检出；安装器可能弹了 Npcap 驱动确认框，或需重开终端后再检测'
+                $results['nmap'] = $false
+            }
+        } catch {
+            Write-Warn "nmap 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['nmap'] = $false
+        }
+    }
+}
+
+# ---------------------------------------------------------------- node / npm
+# playwright-mcp / js-reverse-mcp 都挂在 npm 上：没有 Node 就双双失败。
+if (Should-Run 'node') {
+    Write-Host "`n  [9/12] Node.js / npm (MCP 运行时)" -ForegroundColor Cyan
+    if (Get-Command npm -ErrorAction SilentlyContinue) { Write-Ok '已存在，跳过'; $results['node'] = $true }
+    else {
+        try {
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if (-not $winget) { throw 'winget 不可用，请到 https://nodejs.org 手动安装 LTS 版' }
+            Write-Info 'winget install OpenJS.NodeJS.LTS ...'
+            & winget install --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            # winget 只写机器 PATH，当前会话看不见；把已知安装目录补进本会话 PATH，
+            # 后面的 playwright-mcp / js-reverse-mcp 才能立刻用上 npm
+            if (Test-Path (Join-Path ${env:ProgramFiles} 'nodejs')) {
+                $env:Path = (Join-Path ${env:ProgramFiles} 'nodejs') + ';' + $env:Path
+            }
+            if (Get-Command npm -ErrorAction SilentlyContinue) { Write-Ok 'npm 已就位（本会话已刷新 PATH）'; $results['node'] = $true }
+            else { Write-Warn 'Node.js 已发起安装但当前会话未见 npm；重开终端/应用后再跑一次修复'; $results['node'] = $false }
+        } catch {
+            Write-Warn "Node.js 安装失败: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
+            $results['node'] = $false
+        }
+    }
+}
+
 # ---------------------------------------------------------------- playwright-mcp
 if (Should-Run 'playwright-mcp') {
-    Write-Host "`n  [8/10] playwright-mcp (浏览器自动化)" -ForegroundColor Cyan
+    Write-Host "`n  [10/12] playwright-mcp (浏览器自动化)" -ForegroundColor Cyan
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
         Write-Warn '未找到 npm，跳过'; $results['playwright-mcp'] = $false
     } else {
@@ -286,10 +354,10 @@ if (Should-Run 'playwright-mcp') {
 
 # ---------------------------------------------------------------- js-reverse-mcp
 if (Should-Run 'js-reverse-mcp') {
-    Write-Host "`n  [9/10] js-reverse-mcp (JS 逆向)" -ForegroundColor Cyan
+    Write-Host "`n  [11/12] js-reverse-mcp (JS 逆向)" -ForegroundColor Cyan
     # 官方推荐 npx 免安装方式：无需下载，仅在 mcp.json 注册即可
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-        Write-Warn '未找到 npm，跳过（js-reverse-mcp 依赖 npx）'
+        Write-Warn '未找到 npm（Node.js 未安装或未装上）——先装 Node.js 再重跑修复'
         $results['js-reverse-mcp'] = $false
     } else {
         Write-Info 'js-reverse-mcp 采用官方推荐的 npx 方式（无需本地下载）'
@@ -302,7 +370,7 @@ if (Should-Run 'js-reverse-mcp') {
 
 # ---------------------------------------------------------------- ida-pro-mcp
 if (Should-Run 'ida-pro-mcp') {
-    Write-Host "`n  [10/10] ida-pro-mcp (IDA 桥接)" -ForegroundColor Cyan
+    Write-Host "`n  [12/12] ida-pro-mcp (IDA 桥接)" -ForegroundColor Cyan
     $dst = Join-Path $ToolsDir 'ida-pro-mcp'
     if ((Test-Path $dst) -and -not $Force) { Write-Ok '已存在，跳过'; $results['ida-pro-mcp'] = $true }
     else {

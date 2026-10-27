@@ -83,9 +83,15 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
   const importSkills = async (kind: "zip" | "dir") => {
     setBusy(true);
     setFeedback(null);
-    const r = await hs.skillsImport(kind);
-    setBusy(false);
-    showImportResult(r, "导入失败");
+    try {
+      // 主进程曾可能 reject（解压失败等）；不接住的话 busy 永远不复位，按钮永久变灰。
+      const r = await hs.skillsImport(kind);
+      showImportResult(r, "导入失败");
+    } catch (e) {
+      setFeedback({ kind: "err", text: "导入失败：" + String((e as Error)?.message || e) });
+    } finally {
+      setBusy(false);
+    }
     onReload();
   };
 
@@ -121,13 +127,18 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
     }
     setBusy(true);
     setFeedback(null);
-    const r = await hs.skillsImportUrl(url);
-    setBusy(false);
-    showImportResult(r, "导入失败");
-    if (r.ok) {
-      setSkillUrl("");
-      setCatalog(null); // 有技能装上了，下次打开清单要重新标记「已安装」
-      setExtOpen(false); // 关掉弹窗，让页面上的导入结果反馈可见
+    try {
+      const r = await hs.skillsImportUrl(url);
+      showImportResult(r, "导入失败");
+      if (r.ok) {
+        setSkillUrl("");
+        setCatalog(null); // 有技能装上了，下次打开清单要重新标记「已安装」
+        setExtOpen(false); // 关掉弹窗，让页面上的导入结果反馈可见
+      }
+    } catch (e) {
+      setFeedback({ kind: "err", text: "导入失败：" + String((e as Error)?.message || e) });
+    } finally {
+      setBusy(false);
     }
     onReload();
   };
@@ -135,8 +146,14 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
   const doImportExternal = async (name: string) => {
     setBusy(true);
     setConfirmSkill(null);
-    const r = await hs.skillsImportExternal(name);
-    setBusy(false);
+    let r: SkillImportResult;
+    try {
+      r = await hs.skillsImportExternal(name);
+    } catch (e) {
+      r = { ok: false, error: String((e as Error)?.message || e) };
+    } finally {
+      setBusy(false);
+    }
     showImportResult(r, `导入「${name}」失败`);
     // 装上了就刷新清单里的「已安装」标记
     if (r.ok) {
@@ -153,10 +170,15 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
 
   const doDelete = async (name: string) => {
     setBusy(true);
-    const r = await hs.skillsDelete(name);
-    setBusy(false);
+    try {
+      const r = await hs.skillsDelete(name);
+      setFeedback(r.ok ? { kind: "ok", text: `已删除自定义技能「${name}」` } : { kind: "err", text: r.error || "删除失败" });
+    } catch (e) {
+      setFeedback({ kind: "err", text: "删除失败：" + String((e as Error)?.message || e) });
+    } finally {
+      setBusy(false);
+    }
     setConfirmDelete(null);
-    setFeedback(r.ok ? { kind: "ok", text: `已删除自定义技能「${name}」` } : { kind: "err", text: r.error || "删除失败" });
     onReload();
   };
 
