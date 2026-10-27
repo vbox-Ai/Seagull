@@ -19,7 +19,9 @@ WorkBuddy 国内版 / DeepSeek Harness / 豆包）都可安装 / 卸载：
 | 安装 | 各目标页的安装按钮 | `install*.ps1 -SourcePrompt memory/破甲记忆.md` + 随包技能库 |
 | 卸载 | 各目标页的卸载按钮 | `install*.ps1 -Uninstall` + `clear-injected-prompts.ps1` 兜底清扫 |
 | 装回原始记忆 | 各目标页的「装回原始记忆」 | 还原安装前备份，技能库保留 |
+| 提示词管理 | 安装向导的「去管理」/ 提示词管理页 | 导入 .md/.txt/.zip；同名或内容重复先弹窗选「覆盖 / 取消」 |
 | Skills 管理 | Skills 管理页 | 查看 / 启停本机 Codex 技能 |
+| 外部技能 | Skills 管理页的「外部技能」 | 粘贴技能链接，或从 Lobsterskills 仓库清单挑一个导入技能库 |
 | Seep 工作台 | Seep 逆向工作台页 | 部署 / 自检 / 卸载整条逆向工具链 |
 
 OpenCode 的注入点是 `~/.config/opencode/AGENTS.md`（可用 `XDG_CONFIG_HOME` 改），

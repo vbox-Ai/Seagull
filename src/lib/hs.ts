@@ -70,12 +70,35 @@ export type EnginesState = { seep: SeepState; rea: ReaState };
 export type ReaProgress = { pct: number; label: string; done?: boolean; failed?: boolean };
 
 /** 单个提示词文件的导入结果（zip 一个来源可产出多条）。 */
-export type PromptImportItem = { ok: boolean; name?: string; chars?: number; error?: string };
+export type PromptImportItem = { ok: boolean; name?: string; chars?: number; error?: string; action?: string };
+/** 与库内已有提示词冲突的候选：同名文件或内容重复。 */
+export type PromptConflict = { name: string; existing: string; reason: string };
+export type PromptImportPreview = {
+  ok: boolean;
+  stage: "preview";
+  sources: string[];
+  total: number;
+  created: { name: string; chars: number }[];
+  conflicts: PromptConflict[];
+  skipped: { name: string; reason: string }[];
+  errors: { name: string; error: string }[];
+  error?: string;
+};
+export type PromptImportPayload = { sources?: string[]; mode?: "overwrite" | "skip" };
 export type PromptImportResult = {
   ok: boolean;
+  stage?: "preview" | "done";
+  mode?: "overwrite" | "skip";
+  sources?: string[];
   imported?: number;
+  overwritten?: number;
+  skippedCount?: number;
   total?: number;
-  results: PromptImportItem[];
+  results?: PromptImportItem[];
+  created?: { name: string; chars: number }[];
+  conflicts?: PromptConflict[];
+  skipped?: { name: string; reason: string }[];
+  errors?: { name: string; error: string }[];
   name?: string;
   chars?: number;
   error?: string;
@@ -90,6 +113,10 @@ export type SkillImportResult = {
   error?: string;
 };
 export type SkillDeleteResult = { ok: boolean; error?: string };
+
+/** 外部技能仓库（Lobsterskills）里的一个技能。 */
+export type ExternalSkill = { name: string; desc: string; installed: boolean };
+export type SkillCatalogResult = { ok: boolean; skills: ExternalSkill[]; error?: string };
 
 // ---- 批量操作（注入 / 卸载 / 还原多平台） ----
 export type BatchTargetResult = { target: string; ok: boolean; code?: number; error?: string };
@@ -114,7 +141,7 @@ export type HsApi = {
   overview(): Promise<Overview>;
   history(): Promise<HistoryEntry[]>;
   promptsList(): Promise<PromptFile[]>;
-  promptsImport(sourcePath?: string | string[]): Promise<PromptImportResult>;
+  promptsImport(payload?: string | string[] | PromptImportPayload): Promise<PromptImportResult>;
   promptsDelete(name: string): Promise<{ ok: boolean; error?: string }>;
   promptsSelect(name: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   depsCheck(): Promise<DepsResult>;
@@ -143,6 +170,12 @@ export type HsApi = {
   saveSkills(disabled: string[]): Promise<{ ok: boolean; error?: string }>;
   skillsImport(kind: "zip" | "dir"): Promise<SkillImportResult>;
   skillsDelete(name: string): Promise<SkillDeleteResult>;
+  /** 外部技能仓库清单；force=true 跳过 10 分钟缓存重新拉取。 */
+  skillsCatalog(force?: boolean): Promise<SkillCatalogResult>;
+  /** 从外部仓库缓存导入指定技能（重名仍弹「改名 / 取消」）。 */
+  skillsImportExternal(name: string): Promise<SkillImportResult>;
+  /** 从技能链接导入：GitHub 仓库页 / .zip 直链 / raw SKILL.md。 */
+  skillsImportUrl(url: string): Promise<SkillImportResult>;
   batchRun(payload: { action: "install" | "uninstall" | "restore"; targets: string[] }): Promise<BatchResult>;
   openQQ(url: string): Promise<{ ok: boolean }>;
   quit(): Promise<{ ok: boolean }>;

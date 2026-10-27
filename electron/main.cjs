@@ -703,6 +703,250 @@ async function importSkillSources(sources) {
   return { ok: imported.length > 0, imported, skipped, errors };
 }
 
+// ---------- 外部技能（技能链接 / Lobsterskills 仓库） ----------
+
+/** 外部技能仓库：顶层一个目录就是一个技能（含 SKILL.md）。 */
+const LOBSTER_REPO = "https://github.com/vbox-Ai/Lobsterskills";
+const LOBSTER_ZIP_URLS = [
+  `${LOBSTER_REPO}/archive/refs/heads/main.zip`,
+  `https://ghfast.top/${LOBSTER_REPO}/archive/refs/heads/main.zip`,
+  `https://gh-proxy.com/${LOBSTER_REPO}/archive/refs/heads/main.zip`,
+];
+const SKILL_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+const SKILL_CATALOG_TTL = 10 * 60 * 1000;
+
+/** 下载技能用的缓存目录（仓库快照 / 临时 zip 都放这里）。 */
+function skillCacheDir() {
+  return path.join(homeDir(), ".seagull", "skill-cache");
+}
+
+/** 外部链接只允许 https，拒绝 file:// 与明文 http。 */
+function assertHttpsUrl(raw) {
+  let u = null;
+  try {
+    u = new URL(String(raw || "").trim());
+  } catch {
+    throw new Error("链接格式不正确");
+  }
+  if (u.protocol !== "https:") throw new Error("只支持 https 链接");
+  return u;
+}
+
+/** 给下载加超时，避免网络卡住时界面一直转圈。 */
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label + "超时")), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** 依次尝试多个地址下载，全部失败才报错；成功后校验体积与空文件。 */
+async function downloadFirstOk(urls, dest) {
+  let lastErr = null;
+  for (const u of urls) {
+    try {
+      await withTimeout(downloadTo(u, dest), 60000, "下载");
+      const stat = fs.statSync(dest);
+      if (stat.size === 0) throw new Error("下载内容为空");
+      if (stat.size > SKILL_DOWNLOAD_LIMIT) throw new Error("文件超过 20MB 上限");
+      return u;
+    } catch (e) {
+      lastErr = e;
+      try {
+        fs.rmSync(dest, { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  throw lastErr || new Error("下载失败");
+}
+
+/** 读 SKILL.md 头部的 name / description，用于外部技能列表展示。 */
+function readSkillMeta(dir) {
+  const fallback = { name: path.basename(dir), desc: "" };
+  let head = "";
+  try {
+    head = fs.readFileSync(path.join(dir, "SKILL.md"), "utf8").slice(0, 1500);
+  } catch {
+    return fallback;
+  }
+  const nameMatch = head.match(/^name:\s*(.+)$/m);
+  const descMatch = head.match(/^description:\s*(.+)$/m);
+  return {
+    name: nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, "") : fallback.name,
+    desc: descMatch ? descMatch[1].trim().replace(/^["']|["']$/g, "").slice(0, 120) : "",
+  };
+}
+
+/** 把解包出来的技能目录收进缓存目录，重名自动加序号。 */
+function stageSkillDirs(root, destRoot) {
+  fs.mkdirSync(destRoot, { recursive: true });
+  const staged = [];
+  for (const dir of collectSkillDirs(root)) {
+    let name = sanitizeSkillName(path.basename(dir)) || "skill";
+    let dest = path.join(destRoot, name);
+    let i = 2;
+    while (fs.existsSync(dest)) {
+      dest = path.join(destRoot, `${name}-${i}`);
+      i += 1;
+    }
+    name = path.basename(dest);
+    copyDirRecursive(dir, dest);
+    staged.push(name);
+  }
+  return staged;
+}
+
+/** 拉取 Lobsterskills 仓库清单：下载 main.zip → 解包 → 枚举技能；带 10 分钟缓存。 */
+async function lobsterCatalog(force) {
+  const cache = path.join(skillCacheDir(), "lobsterskills");
+  const marker = path.join(cache, ".fetched");
+  let fresh = false;
+  try {
+    fresh = !force && fs.existsSync(marker) && Date.now() - Number(fs.readFileSync(marker, "utf8")) < SKILL_CATALOG_TTL;
+  } catch {
+    fresh = false;
+  }
+  if (!fresh) {
+    fs.rmSync(cache, { recursive: true, force: true });
+    fs.mkdirSync(cache, { recursive: true });
+    const zip = path.join(skillCacheDir(), "lobsterskills.zip");
+    let tmp = null;
+    try {
+      await downloadFirstOk(LOBSTER_ZIP_URLS, zip);
+      tmp = await extractZipToTemp(zip);
+      const staged = stageSkillDirs(tmp, cache);
+      if (staged.length === 0) throw new Error("仓库里没有含 SKILL.md 的技能目录");
+      fs.writeFileSync(marker, String(Date.now()), "utf8");
+    } finally {
+      try {
+        if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.rmSync(zip, { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const installed = new Set();
+  try {
+    for (const d of fs.readdirSync(skillsDir(), { withFileTypes: true })) {
+      if (d.isDirectory()) installed.add(d.name);
+    }
+  } catch {
+    /* 没有 Codex 目录就是全未安装 */
+  }
+  let names = [];
+  try {
+    names = fs
+      .readdirSync(cache, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && fs.existsSync(path.join(cache, d.name, "SKILL.md")))
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return [];
+  }
+  return names.map((name) => {
+    const meta = readSkillMeta(path.join(cache, name));
+    return { name, desc: meta.desc || meta.name, installed: installed.has(name) };
+  });
+}
+
+/** 从缓存导入指定外部技能（重名沿用「改名 / 取消」弹窗）。 */
+async function importLobsterSkill(name) {
+  const safe = sanitizeSkillName(name);
+  if (!safe || safe !== name) return { ok: false, error: "非法技能名" };
+  await lobsterCatalog(false);
+  const dir = path.join(skillCacheDir(), "lobsterskills", safe);
+  if (!fs.existsSync(path.join(dir, "SKILL.md"))) {
+    return { ok: false, error: "缓存里找不到该技能，请刷新清单后重试" };
+  }
+  return importSkillSources([dir]);
+}
+
+/**
+   从链接导入技能，支持三种地址：
+   * GitHub 仓库页        → 转成 archive zip 下载，导入其中所有技能
+   * .zip 直链            → 直接下载解包
+   * raw 的 SKILL.md 直链 → 包成单技能导入
+*/
+async function importSkillsFromUrl(rawUrl) {
+  let u = null;
+  try {
+    u = assertHttpsUrl(rawUrl);
+  } catch (e) {
+    return { ok: false, error: String(e.message) };
+  }
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "seagull-skill-"));
+  try {
+    // raw 的单个 SKILL.md：包成单技能目录
+    if (/\.(md|markdown)$/i.test(u.pathname) && /raw\.githubusercontent\.com$/i.test(u.hostname)) {
+      const segs = u.pathname.split("/").filter(Boolean);
+      const name = sanitizeSkillName(segs.length >= 2 ? segs[segs.length - 2] : "external-skill") || "external-skill";
+      const skillDir = path.join(work, name);
+      let text = "";
+      await downloadFirstOk([u.toString()], path.join(work, "SKILL.md"));
+      text = fs.readFileSync(path.join(work, "SKILL.md"), "utf8");
+      fs.rmSync(path.join(work, "SKILL.md"), { force: true });
+      if (!/^---|#/m.test(text)) return { ok: false, error: "该链接不是有效的 SKILL.md" };
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), text, "utf8");
+      return await importSkillSources([skillDir]);
+    }
+
+    // GitHub 仓库页 → archive zip；其余链接按 zip 直链处理
+    const urls = [];
+    if (/(^|\.)github\.com$/i.test(u.hostname) && !/\.zip$/i.test(u.pathname)) {
+      const segs = u.pathname.split("/").filter(Boolean);
+      if (segs.length < 2) return { ok: false, error: "GitHub 链接需要包含仓库名" };
+      const repo = segs[1].replace(/\.git$/i, "");
+      const base = `https://github.com/${segs[0]}/${repo}/archive/refs/heads`;
+      for (const branch of ["main", "master"]) {
+        urls.push(`${base}/${branch}.zip`, `https://ghfast.top/${base}/${branch}.zip`, `https://gh-proxy.com/${base}/${branch}.zip`);
+      }
+    } else {
+      urls.push(u.toString());
+    }
+
+    const zip = path.join(work, "skills.zip");
+    await downloadFirstOk(urls, zip);
+    const extracted = await extractZipToTemp(zip);
+    try {
+      const dirs = collectSkillDirs(extracted);
+      if (dirs.length === 0) return { ok: false, error: "下载内容里没有含 SKILL.md 的技能目录" };
+      return await importSkillSources(dirs);
+    } finally {
+      try {
+        fs.rmSync(extracted, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    return { ok: false, error: String(e.message) };
+  } finally {
+    try {
+      fs.rmSync(work, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** 三层技能库总览：seep-kit 引擎技能 + REA 工作流技能 + 注入技能库。 */
 function skillLayers() {  const seep = [];
   const seepRoot = p(SEEP_SKILLS);
@@ -867,32 +1111,91 @@ function listPromptFiles() {
   });
 }
 
-/**
-   目标文件名防冲突：重名时追加 -2、-3……直到不冲突。
-   批量导入 / zip 解包都可能撞名，统一从这里过。
-*/
-function uniquePromptDest(name) {
-  const dir = promptDir();
-  const stem = name.replace(/\.md$/i, "").replace(/[\\/:*?"<>|]/g, "_");
-  let dest = path.join(dir, stem + ".md");
-  let n = 1;
-  while (fs.existsSync(dest)) {
-    n += 1;
-    dest = path.join(dir, stem + "-" + n + ".md");
-  }
-  return dest;
+/** 规范化提示词文本：去 BOM、统一换行、去首尾空白；内容重复判定只认这个结果。 */
+function normalizePromptText(text) {
+  return String(text).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
 }
 
-/** 把一段文本作为新的 .md 提示词写进 memory/，返回结果对象。 */
-function writePromptText(baseName, text) {
-  if (!text || !text.trim()) return { ok: false, name: baseName, error: "内容为空" };
+/** 库内索引：规范化内容 -> 已有文件名；文件名（小写）-> 实际文件名。 */
+function existingPromptIndex() {
+  const byText = new Map();
+  const byName = new Map();
+  let names = [];
+  try {
+    names = fs
+      .readdirSync(promptDir())
+      .filter((n) => n.toLowerCase().endsWith(".md") && n.toLowerCase() !== "readme.md");
+  } catch {
+    return { byText, byName };
+  }
+  for (const n of names) {
+    byName.set(n.toLowerCase(), n);
+    try {
+      byText.set(normalizePromptText(fs.readFileSync(path.join(promptDir(), n), "utf8")), n);
+    } catch {
+      /* 读不了就不参与内容比对 */
+    }
+  }
+  return { byText, byName };
+}
+
+/** 文件名收敛成单层 .md 名：去目录、去非法字符、.txt/.markdown 统一成 .md。 */
+function promptFileName(baseName) {
+  const base = path.basename(String(baseName || ""));
+  const stem = base.replace(/\.(md|txt|markdown)$/i, "").replace(/[\\/:*?"<>|]/g, "_").trim();
+  return (stem || "prompt") + ".md";
+}
+
+/**
+   候选清单与提示词库比对，只算不写盘：
+   * created   → 可以直接新建写入
+   * conflicts → 同名 / 内容重复，交给前端弹窗决定覆盖还是跳过
+   * skipped   → 本批自己就重复（同名或同内容），无需再提示
+*/
+function planPromptImport(candidates) {
+  const { byText, byName } = existingPromptIndex();
+  const batchText = new Map();
+  const batchNames = new Map();
+  const created = [];
+  const conflicts = [];
+  const skipped = [];
+  for (const c of candidates) {
+    const key = normalizePromptText(c.text);
+    const lower = c.name.toLowerCase();
+    if (batchText.has(key)) {
+      skipped.push({ name: c.name, reason: `与本批的「${batchText.get(key)}」内容重复` });
+      continue;
+    }
+    if (batchNames.has(lower)) {
+      skipped.push({ name: c.name, reason: `与本批的「${batchNames.get(lower)}」同名` });
+      continue;
+    }
+    batchText.set(key, c.name);
+    batchNames.set(lower, c.name);
+    const dupTextName = byText.get(key);
+    if (dupTextName) {
+      conflicts.push({ name: c.name, existing: dupTextName, reason: "内容重复", text: c.text, chars: c.chars });
+      continue;
+    }
+    const sameName = byName.get(lower);
+    if (sameName) {
+      conflicts.push({ name: c.name, existing: sameName, reason: "同名文件", text: c.text, chars: c.chars });
+      continue;
+    }
+    created.push({ name: c.name, text: c.text, chars: c.chars });
+  }
+  return { created, conflicts, skipped };
+}
+
+/** 把一份文本写进提示词库；targetName 用于覆盖已有文件（保持原文件名）。 */
+function writePromptFile(name, text, targetName) {
+  const fileName = promptFileName(targetName || name);
   try {
     fs.mkdirSync(promptDir(), { recursive: true });
-    const dest = uniquePromptDest(baseName);
-    fs.writeFileSync(dest, text, "utf8");
-    return { ok: true, name: path.basename(dest), chars: text.trim().length };
+    fs.writeFileSync(path.join(promptDir(), fileName), text, "utf8");
+    return { ok: true, name: fileName, chars: normalizePromptText(text).length };
   } catch (e) {
-    return { ok: false, name: baseName, error: "写入失败：" + String(e.message) };
+    return { ok: false, name: fileName, error: "写入失败：" + String(e.message) };
   }
 }
 
@@ -923,43 +1226,49 @@ function collectPromptFiles(dir, out = []) {
 }
 
 /**
-   导入一个来源文件到提示词库：
-   * .md  → 原样入库
-   * .txt → 内容入库，文件名转成 .md（注入脚本只认 .md）
-   * .zip → 解包后取里面所有 .md/.txt，逐个入库（支持带目录结构的压缩包）
-   返回 { results: [...] }，一个来源可能产出多份提示词（zip）。
+   解析一个来源，产出候选清单（只读，不写盘）：
+   * .md  → 一份
+   * .txt → 一份，文件名转成 .md（注入脚本只认 .md）
+   * .zip → 解包后取里面所有 .md/.txt，逐个成为候选
+   返回 { candidates: [{ name, text, chars }], errors: [{ name, error }] }。
 */
-async function importPromptFile(sourcePath) {
-  if (typeof sourcePath !== "string" || !sourcePath) return { ok: false, error: "空来源路径", results: [] };
+async function collectPromptCandidates(sourcePath) {
+  if (typeof sourcePath !== "string" || !sourcePath) {
+    return { candidates: [], errors: [{ name: "", error: "空来源路径" }] };
+  }
   const src = path.resolve(sourcePath);
   const base = path.basename(src);
-  const results = [];
+  const candidates = [];
+  const errors = [];
   try {
-    if (!fs.existsSync(src)) return { ok: false, error: "文件不存在：" + base, results };
+    if (!fs.existsSync(src)) return { candidates, errors: [{ name: base, error: "文件不存在：" + base }] };
   } catch (e) {
-    return { ok: false, error: String(e.message), results };
+    return { candidates, errors: [{ name: base, error: String(e.message) }] };
   }
+
+  const pushText = (name, text) => {
+    if (!text || !text.trim()) {
+      errors.push({ name, error: "内容为空：" + name });
+      return;
+    }
+    candidates.push({ name: promptFileName(name), text, chars: normalizePromptText(text).length });
+  };
 
   if (/\.zip$/i.test(src)) {
     let tmp = null;
     try {
       tmp = await extractZipToTemp(src);
       const files = collectPromptFiles(tmp);
-      if (files.length === 0) {
-        results.push({ ok: false, name: base, error: "压缩包里没有 .md/.txt 文件" });
-      }
+      if (files.length === 0) errors.push({ name: base, error: "压缩包里没有 .md/.txt 文件" });
       for (const f of files) {
-        let text = "";
         try {
-          text = fs.readFileSync(f, "utf8");
+          pushText(path.basename(f), fs.readFileSync(f, "utf8"));
         } catch (e) {
-          results.push({ ok: false, name: path.basename(f), error: "读取失败：" + String(e.message) });
-          continue;
+          errors.push({ name: path.basename(f), error: "读取失败：" + String(e.message) });
         }
-        results.push(writePromptText(path.basename(f), text));
       }
     } catch (e) {
-      results.push({ ok: false, name: base, error: "解压失败：" + String(e.message) });
+      errors.push({ name: base, error: "解压失败：" + String(e.message) });
     } finally {
       try {
         if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
@@ -967,26 +1276,21 @@ async function importPromptFile(sourcePath) {
         /* 临时目录留着无妨 */
       }
     }
-    const okCount = results.filter((r) => r.ok).length;
-    return { ok: okCount > 0, results, imported: okCount };
+    return { candidates, errors };
   }
 
   if (!/\.(md|txt)$/i.test(src)) {
-    return { ok: false, error: "只支持 .md / .txt / .zip：" + base, results };
+    return { candidates, errors: [{ name: base, error: "只支持 .md / .txt / .zip：" + base }] };
   }
 
   let text;
   try {
     text = fs.readFileSync(src, "utf8");
   } catch (e) {
-    return { ok: false, error: "读取失败：" + String(e.message), results };
+    return { candidates, errors: [{ name: base, error: "读取失败：" + String(e.message) }] };
   }
-  if (!text.trim()) return { ok: false, error: "文件内容为空：" + base, results };
-  // .txt 统一转成 .md 文件名入库，后续列表 / 选择 / 注入逻辑只处理一种格式
-  const mdName = base.replace(/\.(txt|markdown)$/i, "") + ".md";
-  const r = writePromptText(mdName, text);
-  results.push(r);
-  return { ok: r.ok, name: r.name, chars: r.chars, results, imported: r.ok ? 1 : 0 };
+  pushText(base, text);
+  return { candidates, errors };
 }
 
 function deletePromptFile(name) {
@@ -1396,13 +1700,19 @@ function registerIpc() {
 
   // ---- 功能3：提示词管理 ----
   ipcMain.handle("tool:prompts:list", () => listPromptFiles());
-  ipcMain.handle("tool:prompts:import", async (_e, sourcePath) => {
+  ipcMain.handle("tool:prompts:import", async (_e, payload) => {
     let sources = [];
-    if (Array.isArray(sourcePath)) {
-      sources = sourcePath.filter((s) => typeof s === "string" && s);
-    } else if (typeof sourcePath === "string" && sourcePath) {
-      sources = [sourcePath];
-    } else {
+    let mode = "";
+    if (Array.isArray(payload)) {
+      sources = payload.filter((s) => typeof s === "string" && s);
+    } else if (typeof payload === "string" && payload) {
+      sources = [payload];
+    } else if (payload && typeof payload === "object") {
+      if (Array.isArray(payload.sources)) sources = payload.sources.filter((s) => typeof s === "string" && s);
+      // overwrite = 覆盖冲突项；skip = 只跳过冲突项、其余照常导入
+      if (payload.mode === "overwrite" || payload.mode === "skip") mode = payload.mode;
+    }
+    if (sources.length === 0) {
       // 未传来源时弹系统文件选择器：.md / .txt 单文件，.zip 压缩包，支持一次多选
       const r = await dialog.showOpenDialog(win, {
         title: "导入提示词（可多选，支持 .md / .txt / .zip）",
@@ -1415,19 +1725,71 @@ function registerIpc() {
       if (r.canceled || !r.filePaths || !r.filePaths.length) return { ok: false, error: "已取消", results: [] };
       sources = r.filePaths;
     }
-    const results = [];
+
+    const candidates = [];
+    const errors = [];
     for (const src of sources) {
-      // eslint-disable-next-line no-await-in-loop -- 顺序写入，重名自动让位
-      const r = await importPromptFile(src);
-      results.push(...(r.results && r.results.length ? r.results : [r]));
+      // eslint-disable-next-line no-await-in-loop -- 顺序解析，zip 解包要用临时目录
+      const r = await collectPromptCandidates(src);
+      candidates.push(...r.candidates);
+      errors.push(...r.errors);
     }
-    const okCount = results.filter((x) => x.ok).length;
+    const plan = planPromptImport(candidates);
+
+    // 第一阶段：只返回比对结果，一个字节都不写盘
+    if (!mode) {
+      return {
+        ok: true,
+        stage: "preview",
+        sources,
+        total: candidates.length,
+        created: plan.created.map((c) => ({ name: c.name, chars: c.chars })),
+        conflicts: plan.conflicts.map((c) => ({ name: c.name, existing: c.existing, reason: c.reason })),
+        skipped: plan.skipped,
+        errors,
+      };
+    }
+
+    // 第二阶段：按用户选择落盘
+    const results = [];
+    let imported = 0;
+    let overwritten = 0;
+    const writeErrors = [];
+    for (const c of plan.created) {
+      const r = writePromptFile(c.name, c.text);
+      results.push({ ...r, action: "new" });
+      if (r.ok) imported += 1;
+      else writeErrors.push({ name: r.name || c.name, error: r.error || "写入失败" });
+    }
+    if (mode === "overwrite") {
+      for (const c of plan.conflicts) {
+        // 覆盖：写回冲突判定指向的那个已有文件，保持库里文件名不变
+        const r = writePromptFile(c.name, c.text, c.existing);
+        results.push({ ...r, action: "overwrite" });
+        if (r.ok) {
+          imported += 1;
+          overwritten += 1;
+        } else {
+          writeErrors.push({ name: r.name || c.existing, error: r.error || "覆盖失败" });
+        }
+      }
+    }
+    // 冲突项只有「跳过模式」才算跳过；覆盖失败的计入 errors，不再混进跳过数
     return {
-      ok: okCount > 0,
-      imported: okCount,
-      total: results.length,
+      ok: imported > 0,
+      stage: "done",
+      mode,
+      imported,
+      overwritten,
+      skippedCount: plan.skipped.length + (mode === "skip" ? plan.conflicts.length : 0),
+      total: candidates.length,
       results,
-      error: okCount === 0 ? results.map((x) => x.error).filter(Boolean).join("；") : undefined,
+      skipped: plan.skipped,
+      errors: errors.concat(writeErrors),
+      error:
+        imported === 0 && errors.length + writeErrors.length
+          ? errors.concat(writeErrors).map((x) => x.error).filter(Boolean).join("；")
+          : undefined,
     };
   });
   ipcMain.handle("tool:prompts:delete", (_e, name) => deletePromptFile(name));
@@ -1649,6 +2011,33 @@ function registerIpc() {
 
   /** 删除自定义技能（目录 + 自定义源 + config.toml 禁用块）。 */
   ipcMain.handle("tool:skills:delete", (_e, name) => deleteCustomSkill(name));
+
+  /** 外部技能仓库清单（Lobsterskills）；force=true 强制刷新缓存。 */
+  ipcMain.handle("tool:skills:catalog", async (_e, force) => {
+    try {
+      return { ok: true, skills: await lobsterCatalog(Boolean(force)) };
+    } catch (e) {
+      return { ok: false, error: String(e.message), skills: [] };
+    }
+  });
+
+  /** 从外部仓库缓存导入指定技能。 */
+  ipcMain.handle("tool:skills:importExternal", async (_e, name) => {
+    try {
+      return await importLobsterSkill(name);
+    } catch (e) {
+      return { ok: false, error: String(e.message) };
+    }
+  });
+
+  /** 从技能链接（GitHub 仓库 / zip / raw SKILL.md）下载并导入。 */
+  ipcMain.handle("tool:skills:importUrl", async (_e, url) => {
+    try {
+      return await importSkillsFromUrl(url);
+    } catch (e) {
+      return { ok: false, error: String(e.message) };
+    }
+  });
 
   /** 批量操作：按平台逐个执行注入 / 卸载 / 还原，独立报结果。 */
   ipcMain.handle("tool:batch:run", async (_e, payload) => {

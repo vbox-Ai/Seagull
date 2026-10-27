@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld("hs", {
   history: () => ipcRenderer.invoke("tool:history"),
   // 功能3：提示词管理
   promptsList: () => ipcRenderer.invoke("tool:prompts:list"),
-  promptsImport: (sourcePath) => ipcRenderer.invoke("tool:prompts:import", sourcePath),  promptsDelete: (name) => ipcRenderer.invoke("tool:prompts:delete", name),
+  promptsImport: (payload) => ipcRenderer.invoke("tool:prompts:import", payload),
+  promptsDelete: (name) => ipcRenderer.invoke("tool:prompts:delete", name),
   promptsSelect: (name) => ipcRenderer.invoke("tool:prompts:select", name),
   // 功能5：依赖检测/修复
   depsCheck: () => ipcRenderer.invoke("tool:deps:check"),
@@ -43,6 +44,10 @@ contextBridge.exposeInMainWorld("hs", {
   skillLayers: () => ipcRenderer.invoke("tool:skills:layers"),
   saveSkills: (disabled) => ipcRenderer.invoke("tool:skills:save", disabled),
   skillsImport: (kind) => ipcRenderer.invoke("tool:skills:import", { kind }),
+  // 外部技能：仓库清单 / 指定技能导入 / 技能链接导入
+  skillsCatalog: (force) => ipcRenderer.invoke("tool:skills:catalog", force),
+  skillsImportExternal: (name) => ipcRenderer.invoke("tool:skills:importExternal", name),
+  skillsImportUrl: (url) => ipcRenderer.invoke("tool:skills:importUrl", url),
   skillsDelete: (name) => ipcRenderer.invoke("tool:skills:delete", name),
   batchRun: (payload) => ipcRenderer.invoke("tool:batch:run", payload),
   openQQ: (url) => ipcRenderer.invoke("tool:openQQ", url),

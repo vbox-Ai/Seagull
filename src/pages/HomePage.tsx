@@ -11,6 +11,19 @@ type Props = {
   onOpenProfile: () => void;
 };
 
+/** 首页卡片顺序：只在这里换位，左侧导航仍按 TARGETS 原顺序。 */
+function homeOrder(list: Target[]) {
+  const order = [...list];
+  const swap = (a: string, b: string) => {
+    const i = order.findIndex((t) => t.id === a);
+    const j = order.findIndex((t) => t.id === b);
+    if (i < 0 || j < 0) return;
+    [order[i], order[j]] = [order[j], order[i]];
+  };
+  swap("doubao", "trae");
+  return order;
+}
+
 /** 首页：九平台卡片，顶栏右侧醒目的个人中心入口，卡片统一尺寸，右上角注入状态圆点。 */
 export function HomePage({ targets, overview, onOpen, onOpenProfile }: Props) {
   const statusOf = (id: string) => {
@@ -38,7 +51,7 @@ export function HomePage({ targets, overview, onOpen, onOpenProfile }: Props) {
       </div>
 
       <div className="sg-grid">
-        {targets.map((t) => {
+        {homeOrder(targets).map((t) => {
           const on = statusOf(t.id);
           return (
             <button

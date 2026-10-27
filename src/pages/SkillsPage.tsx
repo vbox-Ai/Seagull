@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { hs, type Skill, type SkillLayers, type BatchResult } from "../lib/hs";
+import {
+  hs,
+  type Skill,
+  type SkillLayers,
+  type BatchResult,
+  type ExternalSkill,
+  type SkillImportResult,
+} from "../lib/hs";
 import { TARGETS } from "../data/targets";
 import { cx } from "../lib/cx";
 
@@ -18,6 +25,15 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // 外部技能：技能链接 + Lobsterskills 仓库清单
+  const [extOpen, setExtOpen] = useState(false);
+  const [extTab, setExtTab] = useState<"url" | "repo">("repo");
+  const [skillUrl, setSkillUrl] = useState("");
+  const [catalog, setCatalog] = useState<ExternalSkill[] | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogErr, setCatalogErr] = useState<string | null>(null);
+  const [confirmSkill, setConfirmSkill] = useState<string | null>(null);
 
   // 批量模式（决策点3）：开关入口在 Skills 管理页
   const [batchMode, setBatchMode] = useState(false);
@@ -48,19 +64,89 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
   };
   const save = () => onSave(skills.filter((s) => !enabled[s.name]).map((s) => s.name));
 
+  /** 把导入结果拼成一行反馈；全被跳过时也算「正常结束」而不是报错。 */
+  const describeImport = (r: SkillImportResult) => {
+    const parts: string[] = [];
+    if (r.imported?.length) parts.push(`导入 ${r.imported.length} 个：${r.imported.join(" · ")}`);
+    if (r.skipped?.length) parts.push(`跳过 ${r.skipped.length} 个（${r.skipped.join(" · ")}）`);
+    if (r.errors?.length) parts.push(`失败 ${r.errors.length} 个（${r.errors.join(" · ")}）`);
+    return parts.join("；");
+  };
+
+  const showImportResult = (r: SkillImportResult, fallbackErr: string) => {
+    const text = describeImport(r);
+    if (r.ok) setFeedback({ kind: "ok", text: text || "导入完成" });
+    else if (r.skipped?.length && !r.error) setFeedback({ kind: "info", text });
+    else setFeedback({ kind: "err", text: r.error || text || fallbackErr });
+  };
+
   const importSkills = async (kind: "zip" | "dir") => {
     setBusy(true);
     setFeedback(null);
     const r = await hs.skillsImport(kind);
     setBusy(false);
+    showImportResult(r, "导入失败");
+    onReload();
+  };
+
+  const loadCatalog = async (force = false) => {
+    setCatalogBusy(true);
+    setCatalogErr(null);
+    const r = await hs.skillsCatalog(force);
+    setCatalogBusy(false);
+    if (r.ok) setCatalog(r.skills);
+    else {
+      setCatalog([]);
+      setCatalogErr(r.error || "拉取技能清单失败");
+    }
+  };
+
+  const switchExtTab = (tab: "url" | "repo") => {
+    setExtTab(tab);
+    // 仓库清单只在第一次切过去时拉，之后靠「刷新」手动更新
+    if (tab === "repo" && catalog === null && !catalogBusy) loadCatalog(false);
+  };
+
+  const openExternal = () => {
+    setExtOpen(true);
+    setExtTab("repo");
+    if (catalog === null && !catalogBusy) loadCatalog(false);
+  };
+
+  const importByUrl = async () => {
+    const url = skillUrl.trim();
+    if (!url) {
+      setFeedback({ kind: "err", text: "请先填写技能下载地址" });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    const r = await hs.skillsImportUrl(url);
+    setBusy(false);
+    showImportResult(r, "导入失败");
     if (r.ok) {
-      const parts: string[] = [];
-      if (r.imported?.length) parts.push(`导入 ${r.imported.length} 个：${r.imported.join(" · ")}`);
-      if (r.skipped?.length) parts.push(`跳过 ${r.skipped.length} 个（${r.skipped.join(" · ")}）`);
-      if (r.errors?.length) parts.push(`失败 ${r.errors.length} 个（${r.errors.join(" · ")}）`);
-      setFeedback({ kind: "ok", text: parts.join("；") || "导入完成" });
+      setSkillUrl("");
+      setCatalog(null); // 有技能装上了，下次打开清单要重新标记「已安装」
+      setExtOpen(false); // 关掉弹窗，让页面上的导入结果反馈可见
+    }
+    onReload();
+  };
+
+  const doImportExternal = async (name: string) => {
+    setBusy(true);
+    setConfirmSkill(null);
+    const r = await hs.skillsImportExternal(name);
+    setBusy(false);
+    showImportResult(r, `导入「${name}」失败`);
+    // 装上了就刷新清单里的「已安装」标记
+    if (r.ok) {
+      setCatalog(null);
+      setExtTab("repo");
+      loadCatalog(false);
     } else {
-      setFeedback({ kind: r.error === "已取消" ? "info" : "err", text: r.error || "导入失败" });
+      // 没装上（比如重名选了取消）就回到清单，方便换一个技能再试
+      setExtOpen(true);
+      setExtTab("repo");
     }
     onReload();
   };
@@ -157,6 +243,9 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
           </button>
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => importSkills("dir")}>
             导入技能文件夹
+          </button>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={openExternal}>
+            外部技能
           </button>
         </div>
         {feedback && (
@@ -315,6 +404,139 @@ export function SkillsPage({ skills, onSave, onReload }: Props) {
                 仅禁用
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {extOpen && (
+        <div className="overlay">
+          <div className="dialog">
+            <h2 className="settings-card-heading">外部技能</h2>
+            <p className="settings-card-description">
+              粘贴技能下载地址，或从 Lobsterskills 仓库里挑一个加入技能库。
+            </p>
+            <div className="sg-skill-tabs">
+              <button
+                type="button"
+                className={cx("sg-skill-tab", extTab === "url" && "active")}
+                onClick={() => switchExtTab("url")}
+              >
+                技能链接
+              </button>
+              <button
+                type="button"
+                className={cx("sg-skill-tab", extTab === "repo" && "active")}
+                onClick={() => switchExtTab("repo")}
+              >
+                外部技能
+              </button>
+            </div>
+
+            {extTab === "url" ? (
+              <>
+                <div className="sg-skill-url-row">
+                  <input
+                    className="sg-skill-url-input"
+                    placeholder="https://…（GitHub 仓库 / .zip / raw SKILL.md）"
+                    value={skillUrl}
+                    disabled={busy}
+                    onChange={(e) => setSkillUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") importByUrl();
+                    }}
+                  />
+                  <button type="button" className="btn btn-primary" disabled={busy} onClick={importByUrl}>
+                    {busy ? "导入中…" : "下载并导入"}
+                  </button>
+                </div>
+                <p className="settings-card-description">
+                  支持 GitHub 仓库地址、.zip 直链、raw 的 SKILL.md；下载后自动解包并导入技能库。
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="app-inline-actions">
+                  <span className="settings-card-description">来源：github.com/vbox-Ai/Lobsterskills</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={catalogBusy || busy}
+                    onClick={() => loadCatalog(true)}
+                  >
+                    {catalogBusy ? "加载中…" : "刷新"}
+                  </button>
+                </div>
+                {catalogErr && <p className="settings-card-description skill-feedback err">{catalogErr}</p>}
+                {catalogBusy && catalog === null ? (
+                  <p className="settings-card-description">正在拉取技能清单…</p>
+                ) : catalog && catalog.length > 0 ? (
+                  <div className="sg-skill-list">
+                    {catalog.map((s) => (
+                      <div key={s.name} className="sg-skill-item">
+                        <div className="sg-skill-item-copy">
+                          <div className="sg-skill-item-name">{s.name}</div>
+                          <div className="sg-skill-item-desc clamp">{s.desc}</div>
+                        </div>
+                        {s.installed ? (
+                          <span className="badge badge-success">已安装</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-xs"
+                            disabled={busy}
+                            onClick={() => {
+                              setExtOpen(false);
+                              setConfirmSkill(s.name);
+                            }}
+                          >
+                            导入
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="settings-card-description">清单为空，点「刷新」重试。</p>
+                )}
+              </>
+            )}
+
+            <div className="app-inline-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setExtOpen(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmSkill && (
+        <div className="overlay">
+          <div className="dialog">
+            <h2 className="settings-card-heading">加入技能库</h2>
+            <p className="settings-card-description skill-confirm-copy">
+              是否将「{confirmSkill}」技能加入技能库？
+            </p>
+            <div className="app-inline-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => doImportExternal(confirmSkill)}
+              >
+                导入
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setConfirmSkill(null);
+                  setExtOpen(true);
+                }}
+              >
                 取消
               </button>
             </div>

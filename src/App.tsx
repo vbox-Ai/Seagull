@@ -457,8 +457,9 @@ export function App() {
                   setView("home");
                 }}
                 onManagePrompts={() => {
+                  // 向导里「去管理」指向提示词管理页，不能落到个人中心
                   setWizardTarget(null);
-                  setView("profile");
+                  setView("prompts");
                 }}
               />
             ) : (
