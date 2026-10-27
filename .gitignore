@@ -46,3 +46,7 @@ dist_nuitka/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# tools 工具箱：运行产物与本地私密配置（上游 key 放这里，别进仓库）
+tools/out/
+tools/config.local.json

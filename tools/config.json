@@ -1,0 +1,24 @@
+{
+  "rulesFile": "%USERPROFILE%\\.trae-cn\\user_rules\\海鸥V8·破甲版.md",
+  "marker": "HANSHUANG-INJECT",
+  "proxy": {
+    "port": 8787,
+    "upstream": "https://api.deepseek.com",
+    "upstreamKey": "",
+    "logRequests": true
+  },
+  "cdp": {
+    "endpoint": "http://127.0.0.1:9222",
+    "urlPatterns": [
+      "*chat/completions*",
+      "*/messages*",
+      "*completions*",
+      "*generateContent*"
+    ],
+    "matchRegex": "chat/completions|/messages|completions|generateContent"
+  },
+  "split": {
+    "budgetChars": 13000,
+    "outDir": "out"
+  }
+}
